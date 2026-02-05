@@ -2,7 +2,6 @@
 //!
 //! Handles sign placement and block entity creation for all sign types.
 
-use std::cmp::Ordering;
 use std::f64::consts::PI;
 use std::sync::{Arc, Weak};
 
@@ -32,51 +31,6 @@ fn convert_to_rotation_segment(degrees: f32) -> u8 {
     // Convert to segment (each segment is 22.5 degrees)
     // Round to nearest segment
     (((normalized / 22.5) + 0.5) as u8) & 15
-}
-
-/// Gets the nearest looking directions from the player's rotation.
-///
-/// Returns horizontal directions in order of how closely they match the player's look direction.
-fn get_nearest_looking_directions(rotation: f32, clicked_face: Direction) -> Vec<Direction> {
-    // Build list of directions in order of preference
-    // Start with the opposite of the clicked face (most natural for wall signs)
-    // Then add directions based on player facing
-    let mut directions = Vec::with_capacity(4);
-
-    // Add horizontal directions in order of how closely they match player's look
-    let all_horizontal = [
-        Direction::North,
-        Direction::East,
-        Direction::South,
-        Direction::West,
-    ];
-
-    // Calculate angle for each direction and sort by distance to player's rotation
-    let mut scored: Vec<(Direction, f32)> = all_horizontal
-        .iter()
-        .map(|&dir| {
-            let dir_angle = dir.to_yaw();
-            let diff = (rotation - dir_angle + 180.0).rem_euclid(360.0) - 180.0;
-            (dir, diff.abs())
-        })
-        .collect();
-
-    scored.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(Ordering::Equal));
-
-    for (dir, _) in scored {
-        directions.push(dir);
-    }
-
-    // If clicked face is horizontal, prefer placing on the opposite side
-    if clicked_face.is_horizontal() {
-        let opposite = clicked_face.opposite();
-        if let Some(pos) = directions.iter().position(|&d| d == opposite) {
-            directions.remove(pos);
-            directions.insert(0, opposite);
-        }
-    }
-
-    directions
 }
 
 /// Calculates whether the player is facing the front of a sign.
@@ -387,7 +341,7 @@ impl BlockBehaviour for WallSignBlock {
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         // Try each horizontal direction based on player's look direction
-        let directions = get_nearest_looking_directions(context.rotation, context.clicked_face);
+        let directions = context.get_nearest_looking_directions();
 
         for direction in directions {
             // The sign faces the opposite direction of where it's attached
@@ -608,7 +562,7 @@ impl BlockBehaviour for WallHangingSignBlock {
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {
         // Try each horizontal direction based on player's look direction
-        let directions = get_nearest_looking_directions(context.rotation, context.clicked_face);
+        let directions = context.get_nearest_looking_directions();
 
         for direction in directions {
             // Wall hanging signs face perpendicular to the wall they're attached to
