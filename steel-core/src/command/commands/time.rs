@@ -1,3 +1,4 @@
+//! Handler for the `time` command
 use steel_protocol::packets::game::CSetTime;
 use steel_registry::vanilla_game_rules::ADVANCE_TIME;
 use steel_utils::translations;
@@ -10,6 +11,7 @@ use crate::command::{
     error::CommandError,
 };
 
+/// Handler for the `time` command
 #[must_use]
 pub fn command_handler() -> impl CommandHandlerDyn {
     CommandHandlerBuilder::new(
@@ -19,9 +21,9 @@ pub fn command_handler() -> impl CommandHandlerDyn {
     )
     .then(
         literal("query")
-            .then(literal("day").executes(TimeQueryDayExecutor))
-            .then(literal("daytime").executes(TimeQueryDayTimeExecutor))
-            .then(literal("gametime").executes(TimeQueryGameTimeExecutor)),
+            .then(literal("day").executes(TimeQueryExecutor::Day))
+            .then(literal("daytime").executes(TimeQueryExecutor::Daytime))
+            .then(literal("gametime").executes(TimeQueryExecutor::Gametime)),
     )
     .then(
         literal("set")
@@ -29,56 +31,42 @@ pub fn command_handler() -> impl CommandHandlerDyn {
             .then(literal("midnight").executes(TimeConstSetExecutor::<18000>))
             .then(literal("night").executes(TimeConstSetExecutor::<13000>))
             .then(literal("noon").executes(TimeConstSetExecutor::<6000>))
-            .then(argument("time", TimeArgument).executes(TimeSetExecutor)),
+            .then(argument("time", TimeArgument).executes(TimeExecutor::Set)),
     )
-    .then(literal("add").then(argument("time", TimeArgument).executes(TimeAddExecutor)))
+    .then(literal("add").then(argument("time", TimeArgument).executes(TimeExecutor::Add)))
 }
 
-struct TimeQueryDayExecutor;
+enum TimeQueryExecutor {
+    Day,
+    Daytime,
+    Gametime,
+}
 
-impl CommandExecutor<()> for TimeQueryDayExecutor {
+impl CommandExecutor<()> for TimeQueryExecutor {
     fn execute(&self, _args: (), context: &mut CommandContext) -> Result<(), CommandError> {
-        let day = context.world.level_data.read().day();
+        let number = {
+            let lock = context.world.level_data.read();
+            match self {
+                TimeQueryExecutor::Day => lock.day(),
+                TimeQueryExecutor::Daytime => lock.day_time(),
+                TimeQueryExecutor::Gametime => lock.game_time(),
+            }
+        };
         context.sender.send_message(
             &translations::COMMANDS_TIME_QUERY
-                .message([TextComponent::from(format!("{day}"))])
+                .message([TextComponent::from(format!("{number}"))])
                 .into(),
         );
         Ok(())
     }
 }
 
-struct TimeQueryDayTimeExecutor;
-
-impl CommandExecutor<()> for TimeQueryDayTimeExecutor {
-    fn execute(&self, _args: (), context: &mut CommandContext) -> Result<(), CommandError> {
-        let day_time = context.world.level_data.read().day_time();
-        context.sender.send_message(
-            &translations::COMMANDS_TIME_QUERY
-                .message([TextComponent::from(format!("{day_time}"))])
-                .into(),
-        );
-        Ok(())
-    }
+enum TimeExecutor {
+    Add,
+    Set,
 }
 
-struct TimeQueryGameTimeExecutor;
-
-impl CommandExecutor<()> for TimeQueryGameTimeExecutor {
-    fn execute(&self, _args: (), context: &mut CommandContext) -> Result<(), CommandError> {
-        let game_time = context.world.level_data.read().game_time();
-        context.sender.send_message(
-            &translations::COMMANDS_TIME_QUERY
-                .message([TextComponent::from(format!("{game_time}"))])
-                .into(),
-        );
-        Ok(())
-    }
-}
-
-struct TimeAddExecutor;
-
-impl CommandExecutor<((), i32)> for TimeAddExecutor {
+impl CommandExecutor<((), i32)> for TimeExecutor {
     fn execute(&self, args: ((), i32), context: &mut CommandContext) -> Result<(), CommandError> {
         let mut day_time_option: Option<i64> = None;
 
@@ -87,7 +75,10 @@ impl CommandExecutor<((), i32)> for TimeAddExecutor {
                 let mut lock = world.level_data.write();
 
                 let game_time = lock.game_time();
-                let new_day_time = (lock.day_time() + i64::from(args.1)) % 24000;
+                let new_day_time = match self {
+                    TimeExecutor::Add => (lock.day_time() + i64::from(args.1)) % 24000,
+                    TimeExecutor::Set => i64::from(args.1) % 24000,
+                };
 
                 lock.set_day_time(new_day_time);
                 (game_time, new_day_time)
@@ -139,36 +130,6 @@ impl<const DAYTIME: i64> CommandExecutor<()> for TimeConstSetExecutor<DAYTIME> {
         context.sender.send_message(
             &translations::COMMANDS_TIME_SET
                 .message([TextComponent::from(format!("{DAYTIME}"))])
-                .into(),
-        );
-
-        Ok(())
-    }
-}
-
-struct TimeSetExecutor;
-
-impl CommandExecutor<((), i32)> for TimeSetExecutor {
-    fn execute(&self, args: ((), i32), context: &mut CommandContext) -> Result<(), CommandError> {
-        context.server.worlds.iter().for_each(|world| {
-            let (game_time, new_day_time) = {
-                let mut lock = world.level_data.write();
-
-                let game_time = lock.game_time();
-                let new_day_time = i64::from(args.1);
-
-                lock.set_day_time(new_day_time);
-                (game_time, new_day_time)
-            };
-
-            let advance_time = { world.get_game_rule(ADVANCE_TIME).as_bool().expect("todo") };
-
-            world.broadcast_to_all(CSetTime::new(game_time, new_day_time, advance_time));
-        });
-
-        context.sender.send_message(
-            &translations::COMMANDS_TIME_SET
-                .message([TextComponent::from(format!("{}", args.1))])
                 .into(),
         );
 
