@@ -8,7 +8,7 @@ use std::{
     time::Duration,
 };
 
-use crate::chunk::chunk_map::ChunkMapTickTimings;
+use crate::{chunk::chunk_map::ChunkMapTickTimings, world::weather::Weather};
 
 use sha2::{Digest, Sha256};
 use steel_protocol::packet_traits::{ClientPacket, EncodedPacket};
@@ -19,8 +19,6 @@ use steel_protocol::packets::game::{
 use steel_protocol::utils::ConnectionProtocol;
 
 use simdnbt::owned::NbtCompound;
-use steel_registry::block_entity_type::BlockEntityTypeRef;
-use steel_registry::blocks::BlockRef;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::Direction;
 use steel_registry::game_rules::{GameRuleRef, GameRuleValue};
@@ -29,6 +27,8 @@ use steel_registry::level_events;
 use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_game_rules::RANDOM_TICK_SPEED;
 use steel_registry::{REGISTRY, dimension_type::DimensionTypeRef};
+use steel_registry::{block_entity_type::BlockEntityTypeRef, vanilla_dimension_types};
+use steel_registry::{blocks::BlockRef, vanilla_game_rules::ADVANCE_WEATHER};
 
 use steel_registry::blocks::shapes::{AABBd, VoxelShape};
 use steel_utils::locks::SyncRwLock;
@@ -48,6 +48,7 @@ use crate::{
 
 mod player_area_map;
 mod player_map;
+mod weather;
 mod world_entities;
 
 pub use player_area_map::PlayerAreaMap;
@@ -94,6 +95,7 @@ pub struct World {
     entity_cache: EntityCache,
     /// Entity tracker for managing which players can see which entities.
     entity_tracker: EntityTracker,
+    weather: Weather,
 }
 
 impl World {
@@ -110,6 +112,14 @@ impl World {
         let level_data =
             LevelDataManager::new(format!("world/{}", dimension.key.path), seed).await?;
 
+        let mut weather = Weather::default();
+        if level_data.is_raining() {
+            weather.rain_level = 1.0;
+            if level_data.is_thundering() {
+                weather.thunder_level = 1.0;
+            }
+        }
+
         Ok(Arc::new_cyclic(|weak_self: &Weak<World>| Self {
             chunk_map: Arc::new(ChunkMap::new(chunk_runtime, weak_self.clone(), &dimension)),
             players: PlayerMap::new(),
@@ -119,6 +129,7 @@ impl World {
             tick_runs_normally: AtomicBool::new(true),
             entity_cache: EntityCache::new(),
             entity_tracker: EntityTracker::new(),
+            weather,
         }))
     }
 
@@ -506,6 +517,10 @@ impl World {
     /// Returns timing information for the world tick.
     #[tracing::instrument(level = "trace", skip(self), name = "world_tick")]
     pub fn tick_b(&self, tick_count: u64, runs_normally: bool) -> WorldTickTimings {
+        if runs_normally {
+            self.tick_weather();
+        }
+
         let random_tick_speed = self.get_game_rule(RANDOM_TICK_SPEED).as_int().unwrap_or(3) as u32;
 
         let chunk_map_timings = self
@@ -532,6 +547,42 @@ impl World {
         WorldTickTimings {
             chunk_map: chunk_map_timings,
             player_tick,
+        }
+    }
+
+    fn tick_weather(&self) {
+        let mut lock = self.level_data.write();
+        let raining_before = lock.is_raining();
+        if self.dimension.has_skylight
+            && !self.dimension.has_ceiling
+            && self.dimension.key == vanilla_dimension_types::THE_END.key
+        {
+            if self
+                .get_game_rule(ADVANCE_WEATHER)
+                .as_bool()
+                .expect("gamerule `ADVANCE_WEATHER` should always be a boolean.")
+            {
+                let clear_weather_time = lock.clear_weather_time();
+                if clear_weather_time > 0 {
+                    lock.set_clear_weather_time(clear_weather_time - 1);
+                    if lock.is_thundering() {
+                        lock.set_thunder_time(0);
+                    } else {
+                        lock.set_thunder_time(1);
+                    }
+                } else {
+                    let thundering_time = lock.thunder_time();
+                    if thundering_time > 0 {
+                        lock.set_thunder_time(thundering_time - 1);
+                        if lock.thunder_time() == 0 {
+                            let thundering = lock.is_thundering();
+                            lock.set_thundering(!thundering);
+                        }
+                    } else if lock.is_thundering() {
+                        //lock.set_thunder_time(time);
+                    }
+                }
+            }
         }
     }
 
