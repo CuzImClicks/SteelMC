@@ -700,6 +700,7 @@ impl World {
     }
 
     /// Checks whether the rain level is sufficient to render rain clientside.
+    ///
     /// WARNING: this function acquires a lock on the `weather` field.
     /// if you already have a lock on the `weather` field, this will DEADLOCK.
     pub fn is_raining_clientside(&self) -> bool {
@@ -709,7 +710,26 @@ impl World {
 
     /// Checks whether the rain level is sufficient to render rain clientside using the provided guard.
     pub fn is_raining_clientside_with_guard(&self, guard: &Weather) -> bool {
-        guard.rain_level > 0.2 && self.can_have_weather()
+        guard.rain_level + (guard.previous_rain_level - guard.rain_level) > 0.2
+            && self.can_have_weather()
+    }
+
+    /// Checks whether the thunder level and rain level are sufficient to spawn thunderbolts
+    ///
+    /// WARNING: this function acquires a lock on the `weather` field.
+    /// if you already have a lock on the `weather` field, this will DEADLOCK.
+    pub fn can_spawn_thunder(&self) -> bool {
+        let guard = self.weather.lock();
+        self.can_spawn_thunder_with_guard(&guard)
+    }
+
+    /// Checks whether the thunder level and rain level are sufficient to spawn thunderbolts using the provided guard.
+    pub fn can_spawn_thunder_with_guard(&self, guard: &Weather) -> bool {
+        let interpolated_rain_level =
+            guard.rain_level + (guard.previous_rain_level - guard.rain_level);
+        let interpolated_thunder_level =
+            guard.thunder_level + (guard.previous_thunder_level - guard.thunder_level);
+        interpolated_rain_level * interpolated_thunder_level > 0.9 && self.can_have_weather()
     }
 
     /// Checks whether the world can have weather.
