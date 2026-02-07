@@ -30,7 +30,7 @@ impl CommandArgument for ItemStackArgument {
         REGISTRY
             .items
             .by_key(&Identifier::vanilla(key))
-            .map(|it| (arg, it))
+            .map(|it| (&arg[1..], it))
     }
 
     fn usage(&self) -> (ArgumentType, Option<SuggestionType>) {
@@ -46,6 +46,8 @@ impl CommandArgument for ItemStackArgument {
 
         suggestions.retain(|s| {
             s.text
+                .strip_prefix("minecraft:")
+                .unwrap_or(&s.text)
                 .starts_with(prefix.strip_prefix("minecraft:").unwrap_or(prefix))
         });
         suggestions

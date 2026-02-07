@@ -118,6 +118,19 @@ pub trait Container {
         count
     }
 
+    /// Clears all items from this container.
+    fn clear_content_matching(&mut self, predicate: &mut dyn FnMut(&mut ItemStack) -> bool) -> i32 {
+        let mut count = 0;
+        for i in 0..self.get_container_size() {
+            let item = self.get_item_mut(i);
+            if predicate(item) {
+                count += item.count;
+                *item = ItemStack::empty();
+            }
+        }
+        count
+    }
+
     /// Tries to add an item to the container.
     ///
     /// First tries to stack with existing matching items, then tries empty slots.

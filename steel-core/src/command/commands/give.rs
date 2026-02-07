@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use steel_registry::{data_components::vanilla_components, item_stack::ItemStack, items::ItemRef};
 use steel_utils::translations;
-use text_components::TextComponent;
+use text_components::{Modifier, TextComponent, interactivity::HoverEvent};
 
 use crate::{
     command::{
@@ -11,6 +11,7 @@ use crate::{
         commands::{CommandExecutor, CommandHandlerBuilder, CommandHandlerDyn, argument},
         context::CommandContext,
         error::CommandError,
+        sender::CommandSender,
     },
     inventory::container::Container,
     player::Player,
@@ -46,36 +47,7 @@ impl CommandExecutor<(((), Vec<Arc<Player>>), ItemRef)> for GiveNoCountExecutor 
     ) -> Result<(), CommandError> {
         let (((), targets), item) = args;
 
-        let count = give(&targets, item, 1);
-
-        if targets.len() == 1 {
-            context.sender.send_message(
-                &translations::COMMANDS_GIVE_SUCCESS_SINGLE
-                    .message([
-                        TextComponent::from(format!("{count}")),
-                        TextComponent::from(item.key.path.to_string()),
-                        TextComponent::from(
-                            targets
-                                .first()
-                                .expect("targets cannot be empty.")
-                                .gameprofile
-                                .name
-                                .clone(),
-                        ),
-                    ])
-                    .into(),
-            );
-        } else {
-            context.sender.send_message(
-                &translations::COMMANDS_GIVE_SUCCESS_MULTIPLE
-                    .message([
-                        TextComponent::from(format!("{count}")),
-                        TextComponent::from(item.key.path.to_string()),
-                        TextComponent::from(targets.len().to_string()),
-                    ])
-                    .into(),
-            );
-        }
+        give(&targets, item, 1, &context.sender);
 
         Ok(())
     }
@@ -91,49 +63,31 @@ impl CommandExecutor<((((), Vec<Arc<Player>>), ItemRef), i32)> for GiveWithCount
     ) -> Result<(), CommandError> {
         let ((((), targets), item), input_count) = args;
 
-        let actual_count = give(&targets, item, input_count);
-
-        if targets.len() == 1 {
-            context.sender.send_message(
-                &translations::COMMANDS_GIVE_SUCCESS_SINGLE
-                    .message([
-                        TextComponent::from(format!("{actual_count}")),
-                        TextComponent::from(item.key.path.to_string()),
-                        TextComponent::from(
-                            targets
-                                .first()
-                                .expect("targets cannot be empty.")
-                                .gameprofile
-                                .name
-                                .clone(),
-                        ),
-                    ])
-                    .into(),
-            );
-        } else {
-            context.sender.send_message(
-                &translations::COMMANDS_GIVE_SUCCESS_MULTIPLE
-                    .message([
-                        TextComponent::from(format!("{actual_count}")),
-                        TextComponent::from(item.key.path.to_string()),
-                        TextComponent::from(targets.len().to_string()),
-                    ])
-                    .into(),
-            );
-        }
+        give(&targets, item, input_count, &context.sender);
 
         Ok(())
     }
 }
 
-fn give(targets: &Vec<Arc<Player>>, item: ItemRef, count: i32) -> i32 {
+fn give(targets: &Vec<Arc<Player>>, item: ItemRef, count: i32, sender: &CommandSender) {
     let max_stack_size = item
         .components
         .get(vanilla_components::MAX_STACK_SIZE)
         .unwrap_or(1);
 
     if count > max_stack_size * 100 {
-        return 0;
+        sender.send_message(
+            &translations::COMMANDS_GIVE_FAILED_TOOMANYITEMS
+                .message([
+                    TextComponent::from(format!("{}", max_stack_size * 100)),
+                    TextComponent::from(format!("[{}]", item.key.path)).hover_event(
+                        // FIXME: display name
+                        HoverEvent::show_item(item.key.path.clone(), None, None::<&str>),
+                    ),
+                ])
+                .into(),
+        );
+        return;
     }
 
     let stack = ItemStack::new(item);
@@ -153,5 +107,38 @@ fn give(targets: &Vec<Arc<Player>>, item: ItemRef, count: i32) -> i32 {
         }
     }
 
-    targets.len() as i32
+    if targets.len() == 1 {
+        sender.send_message(
+            &translations::COMMANDS_GIVE_SUCCESS_SINGLE
+                .message([
+                    TextComponent::from(format!("{count}")),
+                    TextComponent::from(format!("[{}]", item.key.path)).hover_event(
+                        // FIXME: display name
+                        HoverEvent::show_item(item.key.path.clone(), None, None::<&str>),
+                    ),
+                    TextComponent::from(
+                        targets
+                            .first()
+                            .expect("targets cannot be empty.")
+                            .gameprofile
+                            .name
+                            .clone(),
+                    ),
+                ])
+                .into(),
+        );
+    } else {
+        sender.send_message(
+            &translations::COMMANDS_GIVE_SUCCESS_MULTIPLE
+                .message([
+                    TextComponent::from(format!("{count}")),
+                    TextComponent::from(format!("[{}]", item.key.path)).hover_event(
+                        // FIXME: display name
+                        HoverEvent::show_item(item.key.path.clone(), None, None::<&str>),
+                    ),
+                    TextComponent::from(targets.len().to_string()),
+                ])
+                .into(),
+        );
+    }
 }
