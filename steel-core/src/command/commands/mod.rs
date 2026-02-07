@@ -44,6 +44,15 @@ pub trait CommandExecutor<S> {
     fn execute(&self, parsed: S, context: &mut CommandContext) -> Result<(), CommandError>;
 }
 
+impl<S, F> CommandExecutor<S> for F
+where
+    F: for<'a> Fn(S, &'a mut CommandContext) -> Result<(), CommandError> + Send + Sync + 'static,
+{
+    fn execute(&self, args: S, context: &mut CommandContext) -> Result<(), CommandError> {
+        (self)(args, context)
+    }
+}
+
 /// The builder struct that holds command handler data and executor.
 pub struct CommandHandlerBuilder {
     names: &'static [&'static str],
