@@ -8,14 +8,15 @@ use text_components::{Modifier, TextComponent, interactivity::HoverEvent};
 use crate::{
     command::{
         arguments::{integer::IntegerArgument, item::ItemStackArgument, player::PlayerArgument},
-        commands::{CommandExecutor, CommandHandlerBuilder, CommandHandlerDyn, argument},
+        commands::{CommandHandlerBuilder, CommandHandlerDyn, argument},
         context::CommandContext,
-        error::CommandError,
         sender::CommandSender,
     },
     inventory::container::Container,
     player::Player,
 };
+
+type GiveWithCountArgs = ((((), Vec<Arc<Player>>), ItemRef), i32);
 
 /// Handler for the "give" command.
 #[must_use]
@@ -28,45 +29,26 @@ pub fn command_handler() -> impl CommandHandlerDyn {
     .then(
         argument("targets", PlayerArgument::multiple()).then(
             argument("item", ItemStackArgument) // FIXME: should be item predicate instead to also handle tags and components
-                .executes(GiveNoCountExecutor)
+                .executes(
+                    |(((), targets), item): (((), Vec<Arc<Player>>), ItemRef),
+                     ctx: &mut CommandContext| {
+                        give(&targets, item, 1, &ctx.sender);
+
+                        Ok(())
+                    },
+                )
                 .then(
-                    argument("count", IntegerArgument::bounded(Some(1), None))
-                        .executes(GiveWithCountExecutor),
+                    argument("count", IntegerArgument::bounded(Some(1), None)).executes(
+                        |((((), targets), item), input_count): GiveWithCountArgs,
+                         ctx: &mut CommandContext| {
+                            give(&targets, item, input_count, &ctx.sender);
+
+                            Ok(())
+                        },
+                    ),
                 ),
         ),
     )
-}
-
-struct GiveNoCountExecutor;
-
-impl CommandExecutor<(((), Vec<Arc<Player>>), ItemRef)> for GiveNoCountExecutor {
-    fn execute(
-        &self,
-        args: (((), Vec<Arc<Player>>), ItemRef),
-        context: &mut CommandContext,
-    ) -> Result<(), CommandError> {
-        let (((), targets), item) = args;
-
-        give(&targets, item, 1, &context.sender);
-
-        Ok(())
-    }
-}
-
-struct GiveWithCountExecutor;
-
-impl CommandExecutor<((((), Vec<Arc<Player>>), ItemRef), i32)> for GiveWithCountExecutor {
-    fn execute(
-        &self,
-        args: ((((), Vec<Arc<Player>>), ItemRef), i32),
-        context: &mut CommandContext,
-    ) -> Result<(), CommandError> {
-        let ((((), targets), item), input_count) = args;
-
-        give(&targets, item, input_count, &context.sender);
-
-        Ok(())
-    }
 }
 
 fn give(targets: &Vec<Arc<Player>>, item: ItemRef, count: i32, sender: &CommandSender) {
