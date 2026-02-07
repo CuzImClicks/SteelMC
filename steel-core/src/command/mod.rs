@@ -31,7 +31,7 @@ impl CommandDispatcher {
         let dispatcher = CommandDispatcher::new_empty();
         dispatcher.register(commands::clear::command_handler());
         dispatcher.register(commands::execute::command_handler());
-        dispatcher.register(commands::flyspeed::command_handler());
+        dispatcher.register(commands::fly::command_handler());
         dispatcher.register(commands::gamemode::command_handler());
         dispatcher.register(commands::gamerule::command_handler());
         dispatcher.register(commands::give::command_handler());

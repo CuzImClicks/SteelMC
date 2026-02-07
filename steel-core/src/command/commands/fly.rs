@@ -17,7 +17,7 @@ use text_components::TextComponent;
 pub fn command_handler() -> impl CommandHandlerDyn {
     CommandHandlerBuilder::new(
         &["fly"],
-        "Sets the player's flying speed.",
+        "Sets the target's flying parameters (may_fly, speed).",
         "minecraft:command.fly",
     )
     .executes(|(), ctx: &mut CommandContext| {
@@ -118,14 +118,13 @@ fn set_fly(targets: &[Arc<Player>], value: bool) {
     }
 }
 
-fn set_flying_speed(targets: &[Arc<Player>], speed: f32, sender: &CommandSender) {
+fn set_flying_speed(targets: &[Arc<Player>], multiplier: f32, sender: &CommandSender) {
+    let speed = multiplier * 0.05;
     for target in targets {
         target.set_flying_speed(speed);
         target.send_abilities();
-
-        let multiplier = speed / 0.05;
         sender.send_message(&TextComponent::from(format!(
-            "Set flying speed for player '{}' to {speed:.3} ({multiplier:.1}x)",
+            "Set flying speed for player '{}' to {multiplier:.1}x ({speed:.3})",
             target.gameprofile.name.clone()
         )));
     }
@@ -137,7 +136,7 @@ fn query_flying_speed(targets: &[Arc<Player>], sender: &CommandSender) {
         let multiplier = speed / 0.05; // Show as multiplier of default speed
 
         sender.send_message(&TextComponent::from(format!(
-            "Current flying speed for player '{}': {speed:.3} ({multiplier:.1}x)",
+            "Current flying speed for player '{}': {multiplier:.1}x ({speed:.3})",
             target.gameprofile.name.clone()
         )));
     }
