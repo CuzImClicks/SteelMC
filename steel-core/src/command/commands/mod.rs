@@ -1,8 +1,10 @@
 //! This module contains the command building structs.
+pub mod clear;
 pub mod execute;
 pub mod flyspeed;
 pub mod gamemode;
 pub mod gamerule;
+pub mod give;
 pub mod seed;
 pub mod stop;
 pub mod summon;
