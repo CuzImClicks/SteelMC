@@ -1,7 +1,7 @@
 //! Handler for the "teleport" command.
 use std::sync::Arc;
 
-use steel_utils::{math::Vector3, translations};
+use steel_utils::{BlockPos, math::Vector3, translations};
 use text_components::TextComponent;
 
 use crate::{
@@ -10,7 +10,6 @@ use crate::{
         commands::{CommandHandlerBuilder, CommandHandlerDyn, argument},
         context::CommandContext,
         error::CommandError,
-        sender::CommandSender,
     },
     entity::Entity,
     player::Player,
@@ -39,7 +38,7 @@ pub fn command_handler() -> impl CommandHandlerDyn {
                                 .get_player()
                                 .ok_or(CommandError::InvalidRequirement)?;
 
-                            teleport_to_pos(&targets, pos, player.rotation(), &context.sender);
+                            teleport_to_pos(&targets, pos, player.rotation(), context);
 
                             Ok(())
                         },
@@ -47,7 +46,7 @@ pub fn command_handler() -> impl CommandHandlerDyn {
                     .then(argument("rotation", RotationArgument).executes(
                         |((((), targets), pos), rotation): MultipleRotationArgs,
                          context: &mut CommandContext| {
-                            teleport_to_pos(&targets, pos, rotation, &context.sender);
+                            teleport_to_pos(&targets, pos, rotation, context);
 
                             Ok(())
                         },
@@ -55,7 +54,7 @@ pub fn command_handler() -> impl CommandHandlerDyn {
             )
             .then(argument("destination", PlayerArgument::one()).executes(
                 |(((), targets), destination): MultipleEntityArgs, context: &mut CommandContext| {
-                    teleport_to_player(&targets, &destination, &context.sender);
+                    teleport_to_player(&targets, &destination, context);
 
                     Ok(())
                 },
@@ -70,7 +69,7 @@ pub fn command_handler() -> impl CommandHandlerDyn {
                     .ok_or(CommandError::InvalidRequirement)?;
                 let rotation = player.rotation();
 
-                teleport_to_pos(&[player], pos, rotation, &context.sender);
+                teleport_to_pos(&[player], pos, rotation, context);
 
                 Ok(())
             })
@@ -81,7 +80,7 @@ pub fn command_handler() -> impl CommandHandlerDyn {
                         .clone()
                         .ok_or(CommandError::InvalidRequirement)?;
 
-                    teleport_to_pos(&[player], pos, rotation, &context.sender);
+                    teleport_to_pos(&[player], pos, rotation, context);
                     Ok(())
                 },
             )),
@@ -92,14 +91,23 @@ fn teleport_to_pos(
     targets: &[Arc<Player>],
     pos: Vector3<f64>,
     rotation: (f32, f32),
-    sender: &CommandSender,
+    ctx: &mut CommandContext,
 ) {
+    if !ctx.world.is_in_valid_bounds(&BlockPos::from(pos)) {
+        ctx.sender.send_message(
+            &translations::COMMANDS_TELEPORT_INVALID_POSITION
+                .message([] as [TextComponent; 0])
+                .into(),
+        );
+        return;
+    }
+
     for player in targets {
         player.teleport(pos.x, pos.y, pos.z, rotation.0, rotation.1);
     }
 
     if targets.len() == 1 {
-        sender.send_message(
+        ctx.sender.send_message(
             &translations::COMMANDS_TELEPORT_SUCCESS_LOCATION_SINGLE
                 .message([
                     TextComponent::from(
@@ -117,7 +125,7 @@ fn teleport_to_pos(
                 .into(),
         );
     } else {
-        sender.send_message(
+        ctx.sender.send_message(
             &translations::COMMANDS_TELEPORT_SUCCESS_LOCATION_MULTIPLE
                 .message([
                     TextComponent::from(format!("{}", targets.len())),
@@ -133,7 +141,7 @@ fn teleport_to_pos(
 fn teleport_to_player(
     targets: &[Arc<Player>],
     destination: &[Arc<Player>],
-    sender: &CommandSender,
+    ctx: &mut CommandContext,
 ) {
     let destination = destination
         .first()
@@ -147,7 +155,7 @@ fn teleport_to_player(
     }
 
     if targets.len() == 1 {
-        sender.send_message(
+        ctx.sender.send_message(
             &translations::COMMANDS_TELEPORT_SUCCESS_ENTITY_SINGLE
                 .message([
                     TextComponent::from(
@@ -163,7 +171,7 @@ fn teleport_to_player(
                 .into(),
         );
     } else {
-        sender.send_message(
+        ctx.sender.send_message(
             &translations::COMMANDS_TELEPORT_SUCCESS_ENTITY_MULTIPLE
                 .message([
                     TextComponent::from(format!("{}", targets.len())),
