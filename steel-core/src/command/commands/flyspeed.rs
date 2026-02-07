@@ -1,65 +1,144 @@
 //! Handler for the "flyspeed" command.
+use std::slice;
+use std::sync::Arc;
+
+use crate::command::arguments::bool::BoolArgument;
 use crate::command::arguments::float::FloatArgument;
-use crate::command::commands::{
-    CommandExecutor, CommandHandlerBuilder, CommandHandlerDyn, argument,
-};
+use crate::command::arguments::player::PlayerArgument;
+use crate::command::commands::{CommandHandlerBuilder, CommandHandlerDyn, argument, literal};
 use crate::command::context::CommandContext;
 use crate::command::error::CommandError;
+use crate::command::sender::CommandSender;
+use crate::player::Player;
 use text_components::TextComponent;
 
 /// Handler for the "flyspeed" command.
 #[must_use]
 pub fn command_handler() -> impl CommandHandlerDyn {
     CommandHandlerBuilder::new(
-        &["flyspeed"],
+        &["fly"],
         "Sets the player's flying speed.",
-        "minecraft:command.flyspeed",
+        "minecraft:command.fly",
     )
-    .executes(FlySpeedQueryExecutor)
-    .then(
-        argument("speed", FloatArgument::bounded(Some(0.0), Some(10.0))).executes(FlySpeedExecutor),
-    )
-}
-
-struct FlySpeedQueryExecutor;
-
-impl CommandExecutor<()> for FlySpeedQueryExecutor {
-    fn execute(&self, _args: (), context: &mut CommandContext) -> Result<(), CommandError> {
-        let player = context
+    .executes(|(), ctx: &mut CommandContext| {
+        let player = ctx
             .sender
             .get_player()
             .ok_or(CommandError::InvalidRequirement)?;
 
-        let speed = player.get_flying_speed();
-        let multiplier = speed / 0.05; // Show as multiplier of default speed
-
-        context.sender.send_message(&TextComponent::from(format!(
-            "Current flying speed: {speed:.3} ({multiplier:.1}x)"
-        )));
+        toggle_fly(slice::from_ref(player));
 
         Ok(())
+    })
+    .then(
+        argument("target", PlayerArgument::multiple())
+            .executes(
+                |((), targets): ((), Vec<Arc<Player>>), _ctx: &mut CommandContext| {
+                    toggle_fly(&targets);
+                    Ok(())
+                },
+            )
+            .then(argument("value", BoolArgument).executes(
+                |(((), targets), value): (((), Vec<Arc<Player>>), bool),
+                 _ctx: &mut CommandContext| {
+                    set_fly(&targets, value);
+                    Ok(())
+                },
+            ))
+            .then(
+                literal("speed")
+                    .executes(
+                        |((), targets): ((), Vec<Arc<Player>>), ctx: &mut CommandContext| {
+                            query_flying_speed(&targets, &ctx.sender);
+                            Ok(())
+                        },
+                    )
+                    .then(
+                        argument("speed", FloatArgument::bounded(Some(0.0), Some(10.0))).executes(
+                            |(((), targets), speed): (((), Vec<Arc<Player>>), f32),
+                             ctx: &mut CommandContext| {
+                                set_flying_speed(&targets, speed, &ctx.sender);
+
+                                Ok(())
+                            },
+                        ),
+                    ),
+            ),
+    )
+    .then(
+        literal("speed")
+            .executes(|(), ctx: &mut CommandContext| {
+                let player = ctx
+                    .sender
+                    .get_player()
+                    .ok_or(CommandError::InvalidRequirement)?;
+
+                query_flying_speed(slice::from_ref(player), &ctx.sender);
+
+                Ok(())
+            })
+            .then(
+                argument("speed", FloatArgument::bounded(Some(0.0), Some(10.0))).executes(
+                    |((), speed): ((), f32), ctx: &mut CommandContext| {
+                        let player = ctx
+                            .sender
+                            .get_player()
+                            .ok_or(CommandError::InvalidRequirement)?;
+                        set_flying_speed(slice::from_ref(player), speed, &ctx.sender);
+                        Ok(())
+                    },
+                ),
+            ),
+    )
+}
+
+fn toggle_fly(targets: &[Arc<Player>]) {
+    for target in targets {
+        {
+            let mut lock = target.abilities.lock();
+            lock.may_fly = !lock.may_fly;
+            if !lock.may_fly {
+                lock.flying = false;
+            }
+        }
+        target.send_abilities();
     }
 }
 
-struct FlySpeedExecutor;
+fn set_fly(targets: &[Arc<Player>], value: bool) {
+    for target in targets {
+        {
+            let mut lock = target.abilities.lock();
+            lock.may_fly = value;
+            if !value {
+                lock.flying = false;
+            }
+        }
+        target.send_abilities();
+    }
+}
 
-impl CommandExecutor<((), f32)> for FlySpeedExecutor {
-    fn execute(&self, args: ((), f32), context: &mut CommandContext) -> Result<(), CommandError> {
-        let ((), speed) = args;
-
-        let player = context
-            .sender
-            .get_player()
-            .ok_or(CommandError::InvalidRequirement)?;
-
-        player.set_flying_speed(speed);
-        player.send_abilities();
+fn set_flying_speed(targets: &[Arc<Player>], speed: f32, sender: &CommandSender) {
+    for target in targets {
+        target.set_flying_speed(speed);
+        target.send_abilities();
 
         let multiplier = speed / 0.05;
-        context.sender.send_message(&TextComponent::from(format!(
-            "Set flying speed to {speed:.3} ({multiplier:.1}x)"
+        sender.send_message(&TextComponent::from(format!(
+            "Set flying speed for player '{}' to {speed:.3} ({multiplier:.1}x)",
+            target.gameprofile.name.clone()
         )));
+    }
+}
 
-        Ok(())
+fn query_flying_speed(targets: &[Arc<Player>], sender: &CommandSender) {
+    for target in targets {
+        let speed = target.get_flying_speed();
+        let multiplier = speed / 0.05; // Show as multiplier of default speed
+
+        sender.send_message(&TextComponent::from(format!(
+            "Current flying speed for player '{}': {speed:.3} ({multiplier:.1}x)",
+            target.gameprofile.name.clone()
+        )));
     }
 }
