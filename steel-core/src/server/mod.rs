@@ -219,18 +219,18 @@ impl Server {
             };
 
             if world.is_raining_clientside() {
-                player.connection.send_packet(CGameEvent {
+                player.send_packet(CGameEvent {
                     event: GameEventType::StartRaining,
                     data: 0.0,
                 });
             }
 
-            player.connection.send_packet(CGameEvent {
+            player.send_packet(CGameEvent {
                 event: GameEventType::RainLevelChange,
                 data: rain_level,
             });
 
-            player.connection.send_packet(CGameEvent {
+            player.send_packet(CGameEvent {
                 event: GameEventType::ThunderLevelChange,
                 data: thunder_level,
             });
