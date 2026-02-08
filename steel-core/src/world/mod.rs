@@ -632,100 +632,107 @@ impl World {
         }
     }
 
+    #[expect(clippy::too_many_lines)]
     fn tick_weather(&self) {
-        let mut level_data = self.level_data.write();
+        if !self.can_have_weather() {
+            return;
+        }
+
         let mut weather = self.weather.lock();
-        let can_have_weather = self.can_have_weather();
         let raining_before = self.is_raining_clientside_with_guard(&weather);
 
-        if can_have_weather {
-            if self
+        let (is_raining, is_thundering) = {
+            let mut level_data = self.level_data.write();
+
+            if !self
                 .get_game_rule_with_guard(ADVANCE_WEATHER, &level_data)
                 .as_bool()
                 .expect("gamerule `ADVANCE_WEATHER` should always be a boolean.")
             {
-                let clear_weather_time = level_data.clear_weather_time();
-                if clear_weather_time > 0 {
-                    level_data.set_clear_weather_time(clear_weather_time - 1);
-                    if level_data.is_thundering() {
-                        level_data.set_thunder_time(0);
-                    } else {
-                        level_data.set_thunder_time(1);
-                    }
-                    if level_data.is_raining() {
-                        level_data.set_rain_time(0);
-                    } else {
-                        level_data.set_rain_time(1);
-                    }
-                    level_data.set_raining(false);
+                return;
+            }
+
+            let clear_weather_time = level_data.clear_weather_time();
+            if clear_weather_time > 0 {
+                level_data.set_clear_weather_time(clear_weather_time - 1);
+                if level_data.is_thundering() {
+                    level_data.set_thunder_time(0);
                     level_data.set_thundering(false);
                 } else {
-                    let thundering_time = level_data.thunder_time();
-                    if thundering_time > 0 {
-                        level_data.set_thunder_time(thundering_time - 1);
-                        if level_data.thunder_time() == 0 {
-                            let thundering = level_data.is_thundering();
-                            level_data.set_thundering(!thundering);
-                        }
-                    } else if level_data.is_thundering() {
-                        level_data.set_thunder_time(rand::random_range(3_600..=15_600));
-                    } else {
-                        level_data.set_thunder_time(rand::random_range(12_000..=180_000));
-                    }
-
-                    let rain_time = level_data.rain_time();
-                    if rain_time > 0 {
-                        level_data.set_rain_time(rain_time - 1);
-                        if level_data.rain_time() == 0 {
-                            let raining = level_data.is_raining();
-                            level_data.set_raining(!raining);
-                        }
-                    } else if level_data.is_raining() {
-                        level_data.set_rain_time(rand::random_range(12_000..=24_000));
-                    } else {
-                        level_data.set_rain_time(rand::random_range(12_000..=180_000));
-                    }
+                    level_data.set_thunder_time(1);
                 }
-            }
-
-            weather.previous_thunder_level = weather.thunder_level;
-            if level_data.is_thundering() {
-                weather.thunder_level += 0.01;
+                if level_data.is_raining() {
+                    level_data.set_rain_time(0);
+                    level_data.set_raining(false);
+                } else {
+                    level_data.set_rain_time(1);
+                }
+                (false, false)
             } else {
-                weather.thunder_level -= 0.01;
+                let thundering_time = level_data.thunder_time();
+                if thundering_time > 0 {
+                    level_data.set_thunder_time(thundering_time - 1);
+                    if level_data.thunder_time() == 0 {
+                        let thundering = level_data.is_thundering();
+                        level_data.set_thundering(!thundering);
+                    }
+                } else if level_data.is_thundering() {
+                    level_data.set_thunder_time(rand::random_range(3_600..=15_600));
+                } else {
+                    level_data.set_thunder_time(rand::random_range(12_000..=180_000));
+                }
+
+                let rain_time = level_data.rain_time();
+                if rain_time > 0 {
+                    level_data.set_rain_time(rain_time - 1);
+                    if level_data.rain_time() == 0 {
+                        let raining = level_data.is_raining();
+                        level_data.set_raining(!raining);
+                    }
+                } else if level_data.is_raining() {
+                    level_data.set_rain_time(rand::random_range(12_000..=24_000));
+                } else {
+                    level_data.set_rain_time(rand::random_range(12_000..=180_000));
+                }
+                (level_data.is_raining(), level_data.is_thundering())
+            }
+        };
+
+        weather.previous_thunder_level = weather.thunder_level;
+        if is_thundering {
+            weather.thunder_level += 0.01;
+        } else {
+            weather.thunder_level -= 0.01;
+        }
+
+        weather.thunder_level = weather.thunder_level.clamp(0.0, 1.0);
+
+        weather.previous_rain_level = weather.rain_level;
+        if is_raining {
+            weather.rain_level += 0.01;
+        } else {
+            weather.rain_level -= 0.01;
+        }
+
+        weather.rain_level = weather.rain_level.clamp(0.0, 1.0);
+
+        if raining_before == self.is_raining_clientside_with_guard(&weather) {
+            #[expect(clippy::float_cmp)]
+            if weather.previous_rain_level != weather.rain_level {
+                self.broadcast_to_all(CGameEvent {
+                    event: GameEventType::RainLevelChange,
+                    data: weather.rain_level,
+                });
             }
 
-            weather.thunder_level = weather.thunder_level.clamp(0.0, 1.0);
-
-            weather.previous_rain_level = weather.rain_level;
-            if level_data.is_raining() {
-                weather.rain_level += 0.01;
-            } else {
-                weather.rain_level -= 0.01;
+            #[expect(clippy::float_cmp)]
+            if weather.previous_thunder_level != weather.thunder_level {
+                self.broadcast_to_all(CGameEvent {
+                    event: GameEventType::ThunderLevelChange,
+                    data: weather.thunder_level,
+                });
             }
-
-            weather.rain_level = weather.rain_level.clamp(0.0, 1.0);
-        }
-
-        drop(level_data);
-
-        #[expect(clippy::float_cmp)]
-        if weather.previous_rain_level != weather.rain_level {
-            self.broadcast_to_all(CGameEvent {
-                event: GameEventType::RainLevelChange,
-                data: weather.rain_level,
-            });
-        }
-
-        #[expect(clippy::float_cmp)]
-        if weather.previous_thunder_level != weather.thunder_level {
-            self.broadcast_to_all(CGameEvent {
-                event: GameEventType::ThunderLevelChange,
-                data: weather.thunder_level,
-            });
-        }
-
-        if raining_before != self.is_raining_clientside_with_guard(&weather) {
+        } else {
             if raining_before {
                 self.broadcast_to_all(CGameEvent {
                     event: GameEventType::StopRaining,
