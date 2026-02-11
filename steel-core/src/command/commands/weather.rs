@@ -55,15 +55,15 @@ impl CommandExecutor<((), i32)> for WeatherCommandExecutor {
         let ((), duration) = args;
         let world = &context.world;
         let mut lock = world.level_data.write();
-        let (clear_weather_time, rain_time, raining, thundering) = match self {
+        let (clear_weather_time, weather_time, raining, thundering) = match self {
             WeatherCommandExecutor::Clear => (duration, 0, false, false),
             WeatherCommandExecutor::Rain => (0, duration, true, false),
             WeatherCommandExecutor::Thunder => (0, duration, true, true),
         };
 
         lock.set_clear_weather_time(clear_weather_time);
-        lock.set_rain_time(rain_time);
-        lock.set_thunder_time(rain_time);
+        lock.set_rain_time(weather_time);
+        lock.set_thunder_time(weather_time);
         lock.set_raining(raining);
         lock.set_thundering(thundering);
 

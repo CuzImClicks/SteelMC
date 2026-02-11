@@ -218,7 +218,7 @@ impl Server {
                 (weather.rain_level, weather.thunder_level)
             };
 
-            if world.is_raining_clientside() {
+            if world.is_raining() {
                 player.send_packet(CGameEvent {
                     event: GameEventType::StartRaining,
                     data: 0.0,
