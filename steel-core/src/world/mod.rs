@@ -800,9 +800,7 @@ impl World {
         self.dimension.has_skylight
             && !self.dimension.has_ceiling
             && self.dimension.key != vanilla_dimension_types::THE_END.key
-    // ========================================================================
-    // Scheduled Ticks
-    // ========================================================================
+    }
 
     /// Schedules a block tick at the given position.
     ///
