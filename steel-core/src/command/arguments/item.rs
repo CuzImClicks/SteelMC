@@ -27,6 +27,8 @@ impl CommandArgument for ItemStackArgument {
             .unwrap_or(arg[0])
             .to_owned();
 
+        // TODO: Also read snbt data for custom item components
+
         REGISTRY
             .items
             .by_key(&Identifier::vanilla(key))
