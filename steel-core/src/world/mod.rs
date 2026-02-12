@@ -57,8 +57,8 @@ use crate::{
 
 mod player_area_map;
 mod player_map;
-mod weather;
 pub mod tick_scheduler;
+mod weather;
 mod world_entities;
 
 use crate::chunk::world_gen_context::ChunkGeneratorType;
