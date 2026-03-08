@@ -33,4 +33,4 @@ pub use sign_block::{
     CeilingHangingSignBlock, StandingSignBlock, WallHangingSignBlock, WallSignBlock,
 };
 pub use torch_block::{TorchBlock, WallTorchBlock};
-pub use weathering_block::WeatheringBlock;
+pub use weathering_block::{WeatherState, WeatheringCopper, WeatheringCopperFullBlock};
