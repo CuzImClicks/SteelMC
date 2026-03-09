@@ -37,10 +37,12 @@ const BASE_CHANCE: f32 = 0.056_888_89;
 
 /// Composable helper for copper weathering/oxidation logic.
 ///
-/// Unlike vanilla's `WeatheringCopper` interface (which uses Java default methods),
-/// this is a struct that block behaviors hold as a field and delegate to.
-/// Only handles the oxidation tick — placement, shape, and other behavior
-/// must be handled by the owning block behavior.
+/// Add this as a field to block implementations that should support weathering.
+///
+/// In `YourBlock::is_randomly_ticking` first check if self.block is a copper variant and then
+/// call [`WeatheringCopper::is_randomly_ticking`]
+///
+/// In `YourBlock::random_tick` call [`WeatheringCopper::change_over_time`]
 pub struct WeatheringCopper {
     weather_state: WeatherState,
 }
@@ -52,20 +54,15 @@ impl WeatheringCopper {
         Self { weather_state }
     }
 
-    /// Whether this block should receive random ticks.
-    /// Returns `false` for fully oxidized blocks (no next stage).
+    /// Whether this block should receive random ticks. (false if fully Oxidized)
     #[must_use]
     pub fn is_randomly_ticking(&self) -> bool {
         self.weather_state != WeatherState::Oxidized
     }
 
-    /// Vanilla's `ChangeOverTimeBlock.changeOverTime` — the full oxidation algorithm.
+    /// Advances the weathering state and replaces the block, with a 5.7% chance.
     ///
-    /// 1. 5.69% base chance gate
-    /// 2. Scan Manhattan distance 4 for copper neighbors
-    /// 3. If any younger neighbor exists, abort
-    /// 4. Probability = ((older+1)/(older+same+1))² × `chance_modifier`
-    /// 5. On success, advance to next oxidation stage preserving block properties
+    /// Vanilla: [`ChangeOverTimeBlock.changeOverTime`]
     pub fn change_over_time(&self, state: BlockStateId, world: &World, pos: BlockPos) {
         if rand::random::<f32>() >= BASE_CHANCE {
             return;
@@ -76,7 +73,14 @@ impl WeatheringCopper {
         }
     }
 
-    /// Vanilla's `ChangeOverTimeBlock.getNextState` — neighbor scan and probability check.
+    /// Checks the neighbors and calculates the next [`BlockStateId`] for the weathering copper.
+    ///
+    /// 1. Scan Manhattan distance 4 for copper neighbors
+    /// 2. If any younger neighbor exists, abort
+    /// 3. Probability = ((older+1)/(older+same+1))² × `chance_modifier`
+    /// 4. On success, advance to next oxidation stage preserving block properties
+    ///
+    /// Vanilla: `ChangeOverTimeBlock.getNextState`
     fn get_next_state(
         &self,
         state: BlockStateId,
@@ -140,11 +144,9 @@ impl WeatheringCopper {
     }
 }
 
-/// Block behavior for `WeatheringCopperFullBlock` — simple full copper blocks that oxidize.
+/// Block behavior for `WeatheringCopperFullBlock`
 ///
-/// Other weathering block types (stairs, slabs, doors, etc.) should use `WeatheringCopper`
-/// as a struct field and delegate `is_randomly_ticking` and `random_tick` to it, while
-/// handling their own placement and shape logic.
+/// See [`WeatheringState`]
 pub struct WeatheringCopperFullBlock {
     block: BlockRef,
     weathering: WeatheringCopper,
