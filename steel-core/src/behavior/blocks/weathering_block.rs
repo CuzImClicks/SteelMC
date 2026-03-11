@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use steel_registry::{
     REGISTRY,
     blocks::{BlockRef, block_state_ext::BlockStateExt},
@@ -172,7 +174,7 @@ impl BlockBehaviour for WeatheringCopperFullBlock {
         self.weathering.is_randomly_ticking()
     }
 
-    fn random_tick(&self, state: BlockStateId, world: &World, pos: BlockPos) {
+    fn random_tick(&self, state: BlockStateId, world: &Arc<World>, pos: BlockPos) {
         self.weathering.change_over_time(state, world, pos);
     }
 }
