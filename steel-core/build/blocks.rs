@@ -24,6 +24,7 @@ fn to_const_ident(name: &str) -> Ident {
 }
 
 /// Derives the `WeatherState` variant from a block name based on its prefix.
+/// TODO: Extract this?
 fn weather_state_from_name(name: &str) -> Ident {
     let variant = if name.starts_with("oxidized_") {
         "Oxidized"
