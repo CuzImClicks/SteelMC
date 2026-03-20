@@ -24,10 +24,7 @@ impl FrontVec {
         let total = reserve + capacity;
         let mut buf = Vec::with_capacity(total);
 
-        #[allow(clippy::uninit_vec)]
-        unsafe {
-            buf.set_len(reserve);
-        };
+        buf.resize(reserve, 0);
 
         Self {
             buf,
@@ -38,15 +35,8 @@ impl FrontVec {
     /// Creates a new `FrontVec` with the given reserved front space.
     #[must_use]
     pub fn new(reserve: usize) -> Self {
-        let mut buf = Vec::with_capacity(reserve);
-
-        #[allow(clippy::uninit_vec)]
-        unsafe {
-            buf.set_len(reserve);
-        };
-
         Self {
-            buf,
+            buf: vec![0; reserve],
             front_space: reserve,
         }
     }
