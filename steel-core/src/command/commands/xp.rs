@@ -46,12 +46,12 @@ pub fn command_handler() -> impl CommandHandlerDyn {
                 .then(literal("levels").executes(
                     |((), players): ((), Vec<Arc<Player>>), ctx: &mut CommandContext| {
                         for player in players {
-                            let points = { player.experience.lock().level() };
+                            let level = { player.experience.lock().level() };
                             ctx.sender.send_message(
                                 &translations::COMMANDS_EXPERIENCE_QUERY_LEVELS
                                     .message([
                                         TextComponent::from(player.gameprofile.name.clone()),
-                                        TextComponent::from(points.to_string()),
+                                        TextComponent::from(level.to_string()),
                                     ])
                                     .into(),
                             );

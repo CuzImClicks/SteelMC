@@ -2786,7 +2786,10 @@ impl Player {
 
         {
             let mut experience = self.experience.lock();
-            if self.world.get_game_rule(KEEP_INVENTORY) != GameRuleValue::Bool(true) {
+            if self.world.get_game_rule(KEEP_INVENTORY) != GameRuleValue::Bool(true)
+                && self.game_mode.load() != GameType::Spectator
+            {
+                // TODO: drop XP orbs (min(level * 7, 100))
                 experience.set_total_points(0);
             }
             // Re-send XP to client after respawn regardless of keepInventory

@@ -477,13 +477,7 @@ impl PersistentPlayerData {
 
         {
             let mut experience = player.experience.lock();
-            if self.experience_total > 0 {
-                experience.set_total_points(self.experience_total);
-            } else {
-                // Fallback for data without XpTotal
-                experience.set_levels(self.experience_level);
-                experience.set_progress(f64::from(self.experience_progress));
-            }
+            experience.set_total_points(self.experience_total);
         }
     }
 }
