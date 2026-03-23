@@ -89,7 +89,7 @@ pub fn command_handler() -> impl CommandHandlerDyn {
     .then(
         literal("add").then(
             argument("target", PlayerArgument::multiple()).then(
-                argument("amount", IntegerArgument::bounded(Some(0), None))
+                argument("amount", IntegerArgument::new())
                     .executes(
                         |(((), players), amount): (((), Vec<Arc<Player>>), i32),
                          ctx: &mut CommandContext| {
@@ -118,24 +118,15 @@ pub fn command_handler() -> impl CommandHandlerDyn {
         literal("clear")
             .executes(|(): (), ctx: &mut CommandContext| {
                 if let Some(player) = ctx.sender.get_player() {
-                    let mut experience = player.experience.lock();
-                    experience.set_levels(0);
-                    return experience.set_points(0).map_err(|err| {
-                        CommandError::CommandFailed(Box::new(TextComponent::from(err)))
-                    });
+                    player.experience.lock().set_total_points(0);
                 }
                 Ok(())
             })
             .then(argument("target", PlayerArgument::multiple()).executes(
                 |((), players): ((), Vec<Arc<Player>>), _ctx: &mut CommandContext| {
                     for player in players {
-                        let mut experience = player.experience.lock();
-                        experience.set_levels(0);
-                        experience.set_points(0).map_err(|err| {
-                            CommandError::CommandFailed(Box::new(TextComponent::from(err)))
-                        })?;
+                        player.experience.lock().set_total_points(0);
                     }
-
                     Ok(())
                 },
             )),
