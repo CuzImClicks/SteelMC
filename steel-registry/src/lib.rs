@@ -250,6 +250,11 @@ pub mod vanilla_recipes;
 
 #[expect(warnings)]
 #[rustfmt::skip]
+#[path = "generated/vanilla_recipe_property_sets.rs"]
+pub mod vanilla_recipe_property_sets;
+
+#[expect(warnings)]
+#[rustfmt::skip]
 #[path = "generated/vanilla_entities.rs"]
 pub mod vanilla_entities;
 

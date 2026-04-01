@@ -35,6 +35,7 @@ mod painting_variants;
 mod pig_sound_variants;
 mod pig_variants;
 mod poi_types;
+mod recipe_property_sets;
 mod recipes;
 mod sound_events;
 mod sound_types;
@@ -103,6 +104,7 @@ const MENU_TYPES: &str = "menu_types";
 const TIMELINES: &str = "timelines";
 const TIMELINE_TAGS: &str = "timeline_tags";
 const ZOMBIE_NAUTILUS_VARIANTS: &str = "zombie_nautilus_variants";
+const RECIPE_PROPERTY_SETS: &str = "recipe_property_sets";
 const RECIPES: &str = "recipes";
 const VANILLA_ENTITIES: &str = "entities";
 const ENTITY_DATA: &str = "entity_data";
@@ -169,6 +171,7 @@ pub fn main() {
         (timelines::build(), TIMELINES),
         (timeline_tags::build(), TIMELINE_TAGS),
         (zombie_nautilus_variants::build(), ZOMBIE_NAUTILUS_VARIANTS),
+        (recipe_property_sets::build(), RECIPE_PROPERTY_SETS),
         (recipes::build(), RECIPES),
         (entities::build(), VANILLA_ENTITIES),
         (entity_data::build(), ENTITY_DATA),
