@@ -1,12 +1,8 @@
 use std::{collections::BTreeMap, fs};
 
+use heck::ToSnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
-
-#[must_use]
-fn to_item_ident(name: &str) -> Ident {
-    Ident::new(name, Span::call_site())
-}
 
 pub(crate) fn build() -> TokenStream {
     println!("cargo:rerun-if-changed=build_assets/recipe_property_sets.json");
@@ -20,16 +16,13 @@ pub(crate) fn build() -> TokenStream {
     let recipe_property_sets: Vec<TokenStream> = recipe_property_sets_entries
         .iter()
         .map(|(key, list)| {
-            (
-                Ident::new(&key.to_uppercase(), Span::call_site()),
-                list.iter()
-                    .map(|it| to_item_ident(it.strip_prefix("minecraft:").unwrap_or(it)))
-                    .map(|it| quote! { &ITEMS.#it, }),
-            )
-        })
-        .map(|(key, list)| {
+            let key = Ident::new(&key.to_snake_case().to_uppercase(), Span::call_site());
+            let items = list.iter().map(|it| {
+                let ident = Ident::new(it.strip_prefix("minecraft:").unwrap_or(it), Span::call_site());
+                quote! { &ITEMS.#ident }
+            });
             quote! {
-                pub const #key: LazyLock<&'static [ItemRef]> = LazyLock::new(|| Box::leak(vec![#(#list)*].into_boxed_slice()));
+                pub static #key: LazyLock<&'static [ItemRef]> = LazyLock::new(|| Box::leak(vec![#(#items),*].into_boxed_slice()));
             }
         })
         .collect();
