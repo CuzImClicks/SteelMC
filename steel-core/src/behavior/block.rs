@@ -12,6 +12,7 @@ use steel_registry::{REGISTRY, RegistryEntry, RegistryExt};
 use steel_utils::types::{InteractionHand, UpdateFlags};
 use steel_utils::{BlockPos, BlockStateId};
 
+use crate::behavior::InventoryAccess;
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
 use crate::block_entity::SharedBlockEntity;
 use crate::entity::Entity;
@@ -144,7 +145,7 @@ pub trait BlockBehavior: Send + Sync {
     )]
     fn use_item_on(
         &self,
-        item_stack: &ItemStack,
+        inv: &mut InventoryAccess,
         state: BlockStateId,
         world: &Arc<World>,
         pos: BlockPos,
@@ -398,7 +399,7 @@ pub trait BlockBehavior: Send + Sync {
     /// Vanilla parity: `LiquidBlockContainer.canPlaceLiquid()`.
     ///
     /// Returns `true` if the given fluid type may be placed into this block at the
-    /// given state.  Called by the fluid-spread logic; there is no player context
+    /// given state. Called by the fluid-spread logic; there is no player context
     /// here (fluid spreading has no associated player).
     ///
     /// Default (`SimpleWaterloggedBlock`): accepts water when the block has a

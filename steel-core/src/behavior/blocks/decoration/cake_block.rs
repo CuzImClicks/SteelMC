@@ -4,7 +4,6 @@ use steel_macros::block_behavior;
 use steel_registry::{
     REGISTRY, TaggedRegistryExt,
     blocks::{BlockRef, block_state_ext::BlockStateExt, properties::BlockStateProperties},
-    item_stack::ItemStack,
     items::item::BlockHitResult,
     sound_events, vanilla_blocks, vanilla_item_tags,
 };
@@ -14,7 +13,9 @@ use steel_utils::{
 };
 
 use crate::{
-    behavior::{BlockBehavior, BlockPlaceContext, InteractionResult, candle_cakes},
+    behavior::{
+        BlockBehavior, BlockPlaceContext, InteractionResult, InventoryAccess, candle_cakes,
+    },
     player::Player,
     world::World,
 };
@@ -123,7 +124,7 @@ impl BlockBehavior for CakeBlock {
 
     fn use_item_on(
         &self,
-        item_stack: &ItemStack,
+        inv: &mut InventoryAccess,
         state: BlockStateId,
         world: &Arc<World>,
         pos: BlockPos,
@@ -131,6 +132,7 @@ impl BlockBehavior for CakeBlock {
         _hand: InteractionHand,
         _hit_result: &BlockHitResult,
     ) -> InteractionResult {
+        let item_stack = inv.item();
         if REGISTRY
             .items
             .is_in_tag(item_stack.item(), &vanilla_item_tags::CANDLES_TAG)

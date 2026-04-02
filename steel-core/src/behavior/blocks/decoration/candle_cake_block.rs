@@ -2,10 +2,11 @@ use std::sync::Arc;
 
 use steel_macros::block_behavior;
 use steel_registry::{
+    REGISTRY, TaggedRegistryExt,
     blocks::{BlockRef, block_state_ext::BlockStateExt, properties::BlockStateProperties},
     item_stack::ItemStack,
     items::item::BlockHitResult,
-    sound_events, vanilla_blocks, vanilla_items,
+    sound_events, vanilla_block_tags, vanilla_blocks, vanilla_items,
 };
 use steel_utils::{
     BlockPos, BlockStateId, Direction,
@@ -13,7 +14,9 @@ use steel_utils::{
 };
 
 use crate::{
-    behavior::{BlockBehavior, BlockPlaceContext, InteractionResult, blocks::CakeBlock},
+    behavior::{
+        BlockBehavior, BlockPlaceContext, InteractionResult, InventoryAccess, blocks::CakeBlock,
+    },
     player::Player,
     world::World,
 };
@@ -34,6 +37,17 @@ impl CandleCakeBlock {
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
     }
+
+    /// Whether or not the Candle Cake can be lit
+    #[must_use]
+    pub fn can_light(state: BlockStateId) -> bool {
+        REGISTRY
+            .blocks
+            .is_in_tag(state.get_block(), &vanilla_block_tags::CANDLE_CAKES_TAG)
+            && !state
+                .try_get_value(&BlockStateProperties::LIT)
+                .unwrap_or(true)
+    }
 }
 
 impl BlockBehavior for CandleCakeBlock {
@@ -51,7 +65,7 @@ impl BlockBehavior for CandleCakeBlock {
 
     fn use_item_on(
         &self,
-        item_stack: &ItemStack,
+        inv: &mut InventoryAccess,
         state: BlockStateId,
         world: &Arc<World>,
         pos: BlockPos,
@@ -59,6 +73,7 @@ impl BlockBehavior for CandleCakeBlock {
         _hand: InteractionHand,
         hit_result: &BlockHitResult,
     ) -> InteractionResult {
+        let item_stack = inv.item();
         if item_stack.is(&vanilla_items::ITEMS.fire_charge)
             || item_stack.is(&vanilla_items::ITEMS.flint_and_steel)
         {
