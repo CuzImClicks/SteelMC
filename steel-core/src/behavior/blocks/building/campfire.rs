@@ -5,10 +5,9 @@ use steel_registry::{
     REGISTRY, TaggedRegistryExt,
     blocks::{BlockRef, block_state_ext::BlockStateExt, properties::BlockStateProperties},
     fluid::{FluidState, FluidStateExt},
-    item_stack::ItemStack,
     items::item::BlockHitResult,
     sound_events, vanilla_block_entity_types, vanilla_block_tags, vanilla_blocks,
-    vanilla_damage_types, vanilla_fluids,
+    vanilla_damage_types, vanilla_fluids, vanilla_recipe_property_sets,
 };
 use steel_utils::{
     BlockPos, BlockStateId, Direction,
@@ -16,8 +15,8 @@ use steel_utils::{
 };
 
 use crate::{
-    behavior::{BlockBehavior, BlockPlaceContext, BlockStateBehaviorExt, InteractionResult},
-    block_entity::{BLOCK_ENTITIES, SharedBlockEntity},
+    behavior::{BlockBehavior, BlockPlaceContext, InteractionResult, InventoryAccess},
+    block_entity::{BLOCK_ENTITIES, SharedBlockEntity, entities::CampfireBlockEntity},
     entity::{Entity, damage::DamageSource},
     player::Player,
     world::World,
@@ -60,30 +59,25 @@ impl BlockBehavior for CampfireBlock {
         &self,
         context: &BlockPlaceContext<'_>,
     ) -> Option<steel_utils::BlockStateId> {
-        let replacing_water = if context.replace_clicked {
-            context
-                .world
-                .get_block_state(context.clicked_pos)
-                .get_fluid_state()
-                .is_water()
-        } else {
-            false
-        };
+        let is_replacing_water = context.is_water_source();
 
         Some(
             self.block
                 .default_state()
-                .set_value(&BlockStateProperties::WATERLOGGED, replacing_water)
+                .set_value(&BlockStateProperties::WATERLOGGED, is_replacing_water)
                 .set_value(
                     &BlockStateProperties::SIGNAL_FIRE,
                     context
                         .world
-                        .get_block_state(context.clicked_pos.below())
+                        .get_block_state(context.relative_pos.below())
                         .get_block()
                         == vanilla_blocks::HAY_BLOCK,
                 )
-                .set_value(&BlockStateProperties::LIT, !replacing_water)
-                .set_value(&BlockStateProperties::FACING, context.horizontal_direction),
+                .set_value(&BlockStateProperties::LIT, !is_replacing_water)
+                .set_value(
+                    &BlockStateProperties::HORIZONTAL_FACING,
+                    context.horizontal_direction,
+                ),
         )
     }
 
@@ -120,8 +114,10 @@ impl BlockBehavior for CampfireBlock {
         _pos: BlockPos,
         entity: &dyn Entity,
     ) {
-        if state.get_value(&BlockStateProperties::LIT) {
-            entity.hurt(
+        if state.get_value(&BlockStateProperties::LIT)
+            && let Some(living) = entity.as_living()
+        {
+            living.hurt(
                 &DamageSource::environment(vanilla_damage_types::CAMPFIRE),
                 self.fire_damage as f32,
             );
@@ -145,6 +141,11 @@ impl BlockBehavior for CampfireBlock {
     ) -> bool {
         if state.get_value(&BlockStateProperties::WATERLOGGED) || !fluid_state.is_water() {
             return false;
+        }
+
+        if !fluid_state.is_source() {
+            // this is a really weird fix for placing campfires not being destroyed when being placed under a water source
+            return true;
         }
 
         if state.get_value(&BlockStateProperties::LIT) {
@@ -188,17 +189,39 @@ impl BlockBehavior for CampfireBlock {
 
     fn use_item_on(
         &self,
-        item_stack: &ItemStack,
-        state: BlockStateId,
+        inv: &mut InventoryAccess,
+        _state: BlockStateId,
         world: &Arc<World>,
         pos: BlockPos,
         player: &Player,
-        hand: InteractionHand,
-        hit_result: &BlockHitResult,
+        _hand: InteractionHand,
+        _hit_result: &BlockHitResult,
     ) -> InteractionResult {
+        log::info!("CampfireBlock::use_item_on");
+        let item_stack = inv.item();
         let Some(block_entity) = world.get_block_entity(pos) else {
-            return InteractionResult::Pass;
+            tracing::info!("No Block Entity found");
+            return InteractionResult::TryEmptyHandInteraction;
         };
-        InteractionResult::Pass
+
+        if !vanilla_recipe_property_sets::CAMPFIRE_INPUT.contains(&item_stack.item()) {
+            tracing::info!("Item isnt a valid input for a Campfire");
+            return InteractionResult::TryEmptyHandInteraction;
+        }
+
+        let mut lock = block_entity.lock();
+
+        let Some(campfire_entity) = lock.as_any_mut().downcast_mut::<CampfireBlockEntity>() else {
+            tracing::info!("Wasnt able to convert the BlockEntity into a CampfireBlockEntity");
+            return InteractionResult::Fail;
+        };
+
+        if campfire_entity.place_food(item_stack, player.has_infinite_materials()) {
+            return InteractionResult::Success;
+        }
+
+        tracing::info!("Failed to place food in campfire");
+
+        InteractionResult::TryEmptyHandInteraction
     }
 }

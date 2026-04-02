@@ -3291,6 +3291,10 @@ impl Entity for Player {
         // invulnerability, armor, death, and network packets.
         Player::hurt(self, source, amount)
     }
+
+    fn as_living(&self) -> Option<&dyn LivingEntity> {
+        Some(self)
+    }
 }
 
 impl LivingEntity for Player {

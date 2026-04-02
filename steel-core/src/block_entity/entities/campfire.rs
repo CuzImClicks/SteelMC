@@ -48,6 +48,53 @@ impl CampfireBlockEntity {
             cooking_progress: vec![0; CAMPFIRE_SLOTS],
         }
     }
+
+    /// Places food in an available slot in the campfire
+    pub fn place_food(&mut self, input: &mut ItemStack, has_infinite_materials: bool) -> bool {
+        log::info!("CampfireBlockEntity::place_food");
+        for ((item, cooking_time), cooking_progress) in self
+            .items
+            .iter_mut()
+            .zip(self.cooking_times.iter_mut())
+            .zip(self.cooking_progress.iter_mut())
+        {
+            if !item.is_empty() {
+                tracing::info!("{item:?} {cooking_time} {cooking_progress}");
+                continue;
+            }
+
+            let Some(recipe) = REGISTRY
+                .recipes
+                .iter_campfire()
+                .find(|recipe| recipe.matches(input))
+            else {
+                tracing::error!("wasnt able to find recipe for item - {item:?}");
+                return false;
+            };
+
+            *cooking_time = recipe.cooking_time;
+            *cooking_progress = 0;
+            *item = input.copy_with_count(1);
+            if !has_infinite_materials {
+                input.shrink(1);
+            }
+            self.set_changed();
+            return true;
+        }
+
+        false
+    }
+
+    fn mark_updated(&self) {
+        self.set_changed();
+
+        let Some(world) = self.world.upgrade() else {
+            return;
+        };
+        let mut nbt = NbtCompound::new();
+        self.save_additional(&mut nbt);
+        world.broadcast_block_entity_update(self.pos, self.get_type(), nbt);
+    }
 }
 
 impl BlockEntity for CampfireBlockEntity {
@@ -188,12 +235,26 @@ impl BlockEntity for CampfireBlockEntity {
         }
 
         if changed {
-            self.set_changed();
+            self.mark_updated();
         }
     }
 
     fn is_ticking(&self) -> bool {
         true
+    }
+
+    fn as_container(&self) -> Option<&(dyn Container + 'static)> {
+        Some(self)
+    }
+
+    fn as_container_mut(&mut self) -> Option<&mut (dyn Container + 'static)> {
+        Some(self)
+    }
+
+    fn get_update_tag(&self) -> Option<NbtCompound> {
+        let mut nbt = NbtCompound::new();
+        self.save_additional(&mut nbt);
+        Some(nbt)
     }
 }
 

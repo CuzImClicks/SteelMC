@@ -6,6 +6,7 @@
 mod crafting;
 mod ingredient;
 mod registry;
+mod smelting;
 
 pub use crafting::{
     CraftingCategory, CraftingInput, CraftingRecipe, PositionedCraftingInput, RecipeResult,
@@ -13,3 +14,4 @@ pub use crafting::{
 };
 pub use ingredient::Ingredient;
 pub use registry::RecipeRegistry;
+pub use smelting::SmeltingRecipe;

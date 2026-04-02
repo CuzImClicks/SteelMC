@@ -12,7 +12,8 @@ mod portal;
 mod redstone;
 
 pub use building::{
-    FenceBlock, RotatedPillarBlock, WeatherState, WeatheringCopper, WeatheringCopperFullBlock,
+    CampfireBlock, FenceBlock, RotatedPillarBlock, WeatherState, WeatheringCopper,
+    WeatheringCopperFullBlock,
 };
 pub use container::{BarrelBlock, CraftingTableBlock};
 pub use decoration::{

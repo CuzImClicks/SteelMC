@@ -12,6 +12,7 @@ use steel_utils::{BlockPos, BlockStateId};
 
 use super::SharedBlockEntity;
 use super::entities::{BarrelBlockEntity, SignBlockEntity};
+use crate::block_entity::entities::CampfireBlockEntity;
 use crate::world::World;
 
 /// Factory function type for creating block entities.
@@ -149,6 +150,10 @@ pub fn init_block_entities() {
     // Register barrel block entity factory
     registry.register(vanilla_block_entity_types::BARREL, |level, pos, state| {
         Arc::new(SyncMutex::new(BarrelBlockEntity::new(level, pos, state)))
+    });
+
+    registry.register(vanilla_block_entity_types::CAMPFIRE, |level, pos, state| {
+        Arc::new(SyncMutex::new(CampfireBlockEntity::new(level, pos, state)))
     });
 
     assert!(

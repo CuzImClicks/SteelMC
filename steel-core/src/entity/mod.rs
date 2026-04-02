@@ -180,6 +180,11 @@ pub trait Entity: Send + Sync {
         None
     }
 
+    /// Gets the entity as a `dyn LivingEntity`
+    fn as_living(&self) -> Option<&dyn LivingEntity> {
+        None
+    }
+
     /// Gets the entity's rotation as (yaw, pitch) in degrees.
     ///
     /// Yaw is horizontal rotation (0-360), pitch is vertical (-90 to 90).
