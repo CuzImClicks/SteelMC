@@ -84,7 +84,14 @@ pub fn use_item_on(
         if matches!(block_result, InteractionResult::TryEmptyHandInteraction)
             && hand == InteractionHand::MainHand
         {
-            let empty_result = behavior.use_without_item(state, world, pos, player, hit_result);
+            let empty_result = behavior.use_without_item(
+                state,
+                world,
+                pos,
+                player,
+                hit_result,
+                &mut InventoryAccess::new(&mut guard, hand, inv_id),
+            );
 
             if empty_result.consumes_action() {
                 return empty_result;

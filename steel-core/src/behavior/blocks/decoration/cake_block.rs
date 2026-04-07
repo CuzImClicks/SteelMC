@@ -47,7 +47,9 @@ impl CakeBlock {
         if player.can_eat(false) {
             let mut food_data = player.food_data.lock();
             food_data.eat(2, 0.1);
-            let bites = state.get_value(&BlockStateProperties::BITES);
+            let bites = state
+                .try_get_value(&BlockStateProperties::BITES)
+                .unwrap_or(0);
             let new_state = if bites < 6 {
                 state.set_value(&BlockStateProperties::BITES, bites + 1)
             } else {
@@ -106,17 +108,13 @@ impl BlockBehavior for CakeBlock {
         pos: BlockPos,
         player: &Player,
         _hit_result: &BlockHitResult,
+        inv: &mut InventoryAccess,
     ) -> InteractionResult {
         if Self::eat(world, pos, state, player).consumes_action() {
             return InteractionResult::Success;
         }
 
-        if player
-            .inventory
-            .lock()
-            .get_item_in_hand(InteractionHand::MainHand)
-            .is_empty()
-        {
+        if inv.item().is_empty() {
             return InteractionResult::Fail;
         }
         InteractionResult::Pass
@@ -139,11 +137,7 @@ impl BlockBehavior for CakeBlock {
             && state.get_value(&BlockStateProperties::BITES) == 0
         {
             if !player.has_infinite_materials() {
-                player
-                    .inventory
-                    .lock()
-                    .get_item_in_hand_mut(InteractionHand::MainHand)
-                    .shrink(1);
+                item_stack.shrink(1);
             }
             world.play_block_sound(
                 sound_events::BLOCK_CAKE_ADD_CANDLE,

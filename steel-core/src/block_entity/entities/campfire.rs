@@ -107,7 +107,7 @@ impl BlockEntity for CampfireBlockEntity {
     }
 
     fn get_type(&self) -> BlockEntityTypeRef {
-        vanilla_block_entity_types::CAMPFIRE
+        &vanilla_block_entity_types::CAMPFIRE
     }
 
     fn get_block_pos(&self) -> BlockPos {

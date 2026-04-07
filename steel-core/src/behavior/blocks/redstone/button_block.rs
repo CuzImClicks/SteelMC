@@ -17,6 +17,7 @@ use steel_utils::math::Axis;
 use steel_utils::types::UpdateFlags;
 use steel_utils::{BlockPos, BlockStateId};
 
+use crate::behavior::InventoryAccess;
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::context::{BlockHitResult, BlockPlaceContext, InteractionResult};
 use crate::player::Player;
@@ -142,7 +143,7 @@ impl BlockBehavior for ButtonBlock {
     ) -> BlockStateId {
         let support_dir = Self::get_connected_direction(state).opposite();
         if direction == support_dir && !self.can_survive(state, world, pos) {
-            return REGISTRY.blocks.get_default_state_id(vanilla_blocks::AIR);
+            return REGISTRY.blocks.get_default_state_id(&vanilla_blocks::AIR);
         }
         state
     }
@@ -154,6 +155,7 @@ impl BlockBehavior for ButtonBlock {
         pos: BlockPos,
         player: &Player,
         _hit_result: &BlockHitResult,
+        _inv: &mut InventoryAccess,
     ) -> InteractionResult {
         let powered: bool = state.get_value(&BlockStateProperties::POWERED);
         if powered {

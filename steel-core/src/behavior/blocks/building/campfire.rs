@@ -71,7 +71,7 @@ impl BlockBehavior for CampfireBlock {
                         .world
                         .get_block_state(context.relative_pos.below())
                         .get_block()
-                        == vanilla_blocks::HAY_BLOCK,
+                        == &vanilla_blocks::HAY_BLOCK,
                 )
                 .set_value(&BlockStateProperties::LIT, !is_replacing_water)
                 .set_value(
@@ -101,7 +101,7 @@ impl BlockBehavior for CampfireBlock {
         if direction == Direction::Down {
             return state.set_value(
                 &BlockStateProperties::SIGNAL_FIRE,
-                world.get_block_state(pos.below()).get_block() == vanilla_blocks::HAY_BLOCK,
+                world.get_block_state(pos.below()).get_block() == &vanilla_blocks::HAY_BLOCK,
             );
         }
         state
@@ -118,7 +118,7 @@ impl BlockBehavior for CampfireBlock {
             && let Some(living) = entity.as_living()
         {
             living.hurt(
-                &DamageSource::environment(vanilla_damage_types::CAMPFIRE),
+                &DamageSource::environment(&vanilla_damage_types::CAMPFIRE),
                 self.fire_damage as f32,
             );
         }
@@ -184,7 +184,7 @@ impl BlockBehavior for CampfireBlock {
         pos: BlockPos,
         state: BlockStateId,
     ) -> Option<SharedBlockEntity> {
-        BLOCK_ENTITIES.create(vanilla_block_entity_types::CAMPFIRE, level, pos, state)
+        BLOCK_ENTITIES.create(&vanilla_block_entity_types::CAMPFIRE, level, pos, state)
     }
 
     fn use_item_on(
