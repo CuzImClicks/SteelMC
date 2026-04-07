@@ -51,7 +51,6 @@ impl CampfireBlockEntity {
 
     /// Places food in an available slot in the campfire
     pub fn place_food(&mut self, input: &mut ItemStack, has_infinite_materials: bool) -> bool {
-        log::info!("CampfireBlockEntity::place_food");
         for ((item, cooking_time), cooking_progress) in self
             .items
             .iter_mut()
@@ -59,7 +58,6 @@ impl CampfireBlockEntity {
             .zip(self.cooking_progress.iter_mut())
         {
             if !item.is_empty() {
-                tracing::info!("{item:?} {cooking_time} {cooking_progress}");
                 continue;
             }
 
@@ -68,7 +66,6 @@ impl CampfireBlockEntity {
                 .iter_campfire()
                 .find(|recipe| recipe.matches(input))
             else {
-                tracing::error!("wasnt able to find recipe for item - {item:?}");
                 return false;
             };
 
@@ -184,10 +181,13 @@ impl BlockEntity for CampfireBlockEntity {
             }
         }
         nbt.insert("Items", NbtList::Compound(items));
-        nbt.insert("CookingTimes", NbtTag::IntArray(self.cooking_times.clone()));
+        nbt.insert(
+            "CookingTimes",
+            NbtTag::IntArray(self.cooking_progress.clone()),
+        );
         nbt.insert(
             "CookingTotalTimes",
-            NbtTag::IntArray(self.cooking_progress.clone()),
+            NbtTag::IntArray(self.cooking_times.clone()),
         );
     }
 
@@ -203,9 +203,12 @@ impl BlockEntity for CampfireBlockEntity {
                 if item.is_empty() {
                     continue;
                 }
-                changed = true;
+
                 *cooking_progress += 1;
                 if cooking_progress < cooking_time {
+                    if cooking_progress == &1 {
+                        changed = true;
+                    }
                     continue;
                 }
 
@@ -220,6 +223,7 @@ impl BlockEntity for CampfireBlockEntity {
                 *item = ItemStack::empty();
                 *cooking_time = 0;
                 *cooking_progress = 0;
+                changed = true;
             }
         } else {
             for (cooking_time, cooking_progress) in self

@@ -197,30 +197,24 @@ impl BlockBehavior for CampfireBlock {
         _hit_result: &BlockHitResult,
         inv: &mut InventoryAccess,
     ) -> InteractionResult {
-        log::info!("CampfireBlock::use_item_on");
         let item_stack = inv.item();
         let Some(block_entity) = world.get_block_entity(pos) else {
-            tracing::info!("No Block Entity found");
-            return InteractionResult::TryEmptyHandInteraction;
+            return InteractionResult::Fail;
         };
 
         if !vanilla_recipe_property_sets::CAMPFIRE_INPUT.contains(&item_stack.item()) {
-            tracing::info!("Item isnt a valid input for a Campfire");
             return InteractionResult::TryEmptyHandInteraction;
         }
 
         let mut lock = block_entity.lock();
 
         let Some(campfire_entity) = lock.as_any_mut().downcast_mut::<CampfireBlockEntity>() else {
-            tracing::info!("Wasnt able to convert the BlockEntity into a CampfireBlockEntity");
             return InteractionResult::Fail;
         };
 
         if campfire_entity.place_food(item_stack, player.has_infinite_materials()) {
             return InteractionResult::Success;
         }
-
-        tracing::info!("Failed to place food in campfire");
 
         InteractionResult::TryEmptyHandInteraction
     }
