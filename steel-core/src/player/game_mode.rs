@@ -66,15 +66,16 @@ pub fn use_item_on(
         let inv_ref = ContainerRef::PlayerInventory(player.inventory.clone());
         let mut guard = ContainerLockGuard::lock_all(&[&inv_ref]);
         let inv_id = inv_ref.container_id();
+        let mut inventory_access = InventoryAccess::new(&mut guard, hand, inv_id);
 
         let block_result = behavior.use_item_on(
-            &mut InventoryAccess::new(&mut guard, hand, inv_id),
             state,
             world,
             pos,
             player,
             hand,
             hit_result,
+            &mut inventory_access,
         );
 
         if block_result.consumes_action() {
@@ -90,7 +91,7 @@ pub fn use_item_on(
                 pos,
                 player,
                 hit_result,
-                &mut InventoryAccess::new(&mut guard, hand, inv_id),
+                &mut inventory_access,
             );
 
             if empty_result.consumes_action() {

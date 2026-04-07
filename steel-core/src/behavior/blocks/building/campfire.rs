@@ -189,13 +189,13 @@ impl BlockBehavior for CampfireBlock {
 
     fn use_item_on(
         &self,
-        inv: &mut InventoryAccess,
         _state: BlockStateId,
         world: &Arc<World>,
         pos: BlockPos,
         player: &Player,
         _hand: InteractionHand,
         _hit_result: &BlockHitResult,
+        inv: &mut InventoryAccess,
     ) -> InteractionResult {
         log::info!("CampfireBlock::use_item_on");
         let item_stack = inv.item();

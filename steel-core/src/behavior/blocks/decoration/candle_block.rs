@@ -98,13 +98,13 @@ impl BlockBehavior for CandleBlock {
 
     fn use_item_on(
         &self,
-        inv: &mut InventoryAccess,
         state: steel_utils::BlockStateId,
         world: &Arc<World>,
         pos: BlockPos,
         _player: &player::Player,
         _hand: types::InteractionHand,
         _hit_result: &BlockHitResult,
+        inv: &mut InventoryAccess,
     ) -> InteractionResult {
         let item_stack = inv.item();
         if item_stack.is_empty() {

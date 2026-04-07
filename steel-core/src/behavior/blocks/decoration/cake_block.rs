@@ -122,13 +122,13 @@ impl BlockBehavior for CakeBlock {
 
     fn use_item_on(
         &self,
-        inv: &mut InventoryAccess,
         state: BlockStateId,
         world: &Arc<World>,
         pos: BlockPos,
         player: &Player,
         _hand: InteractionHand,
         _hit_result: &BlockHitResult,
+        inv: &mut InventoryAccess,
     ) -> InteractionResult {
         let item_stack = inv.item();
         if REGISTRY

@@ -145,13 +145,13 @@ pub trait BlockBehavior: Send + Sync {
     )]
     fn use_item_on(
         &self,
-        inv: &mut InventoryAccess,
         state: BlockStateId,
         world: &Arc<World>,
         pos: BlockPos,
         player: &Player,
         hand: InteractionHand,
         hit_result: &BlockHitResult,
+        inv: &mut InventoryAccess,
     ) -> InteractionResult {
         InteractionResult::TryEmptyHandInteraction
     }
