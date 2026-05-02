@@ -10,6 +10,7 @@ use std::{
     time::Duration,
 };
 
+use crate::world::game_event_context::GameEventContext;
 use crate::{chunk::chunk_map::ChunkMapGameTickTimings, world::weather::Weather};
 
 use sha2::{Digest, Sha256};
@@ -28,6 +29,7 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::Direction;
 use steel_registry::blocks::shapes::{AABBd, VoxelShape, is_face_full};
 use steel_registry::fluid::FluidRef;
+use steel_registry::game_events::GameEventRef;
 use steel_registry::game_rules::{GameRuleRef, GameRuleValue};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::level_events;
@@ -75,6 +77,7 @@ use crate::{
     poi::PointOfInterestStorage,
 };
 
+pub mod game_event_context;
 mod player_area_map;
 mod player_map;
 pub mod structure;
@@ -2374,5 +2377,16 @@ impl World {
                 self.broadcast_to_nearby(chunk_pos, packet, None);
             }
         }
+    }
+
+    /// Dispatches a Game Event to all listeners in range
+    #[expect(unused_variables, clippy::unused_self, reason = "api method")]
+    pub const fn game_event(
+        self: &Arc<Self>,
+        event: GameEventRef,
+        pos: BlockPos,
+        context: &GameEventContext,
+    ) {
+        // TODO: this is just a stub so that people can implement against it
     }
 }

@@ -8,15 +8,19 @@ use steel_registry::{
     data_components::vanilla_components::BLOCKS_ATTACKS,
     level_events::{PARTICLES_SCRAPE, PARTICLES_WAX_OFF},
     sound_events::{ITEM_AXE_SCRAPE, ITEM_AXE_STRIP, ITEM_AXE_WAX_OFF},
+    vanilla_game_events,
 };
 use steel_utils::{
     math::Axis,
     types::{InteractionHand, UpdateFlags},
 };
 
-use crate::behavior::{
-    InteractionResult, ItemBehavior, UseOnContext, strippables::get_strippable_variant,
-    waxables::get_normal_from_waxed_variant, weathering::previous_copper_stage,
+use crate::{
+    behavior::{
+        InteractionResult, ItemBehavior, UseOnContext, strippables::get_strippable_variant,
+        waxables::get_normal_from_waxed_variant, weathering::previous_copper_stage,
+    },
+    world::game_event_context::GameEventContext,
 };
 
 const AXIS_PROPERTY: EnumProperty<Axis> = BlockStateProperties::AXIS;
@@ -82,7 +86,11 @@ impl ItemBehavior for AxeItem {
                 .level_event(event, pos, 0, Some(context.player.id));
         }
 
-        // TODO: Fire GameEvent::BLOCK_CHANGE for sculk sensors
+        context.world.game_event(
+            &vanilla_game_events::BLOCK_CHANGE,
+            pos,
+            &GameEventContext::new(Some(context.player), Some(new_block_state)),
+        );
 
         let has_infinite_materials = context.player.has_infinite_materials();
         context.inv.item().hurt_and_break(1, has_infinite_materials);

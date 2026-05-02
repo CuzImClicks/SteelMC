@@ -1,5 +1,6 @@
 #![feature(const_trait_impl, const_cmp, derive_const)]
 
+use crate::game_events::GameEventRegistry;
 use crate::world_clock::WorldClockRegistry;
 use crate::{
     attribute::AttributeRegistry,
@@ -64,6 +65,7 @@ pub mod entity_data;
 pub mod entity_types;
 pub mod fluid;
 pub mod frog_variant;
+pub mod game_events;
 pub mod game_rules;
 pub mod instrument;
 pub mod item_stack;
@@ -331,6 +333,11 @@ pub mod vanilla_game_rules;
 
 #[expect(warnings)]
 #[rustfmt::skip]
+#[path = "generated/vanilla_game_events.rs"]
+pub mod vanilla_game_events;
+
+#[expect(warnings)]
+#[rustfmt::skip]
 #[path = "generated/vanilla_level_events.rs"]
 pub mod level_events;
 
@@ -490,6 +497,7 @@ pub struct Registry {
     pub loot_tables: LootTableRegistry,
     pub block_entity_types: BlockEntityTypeRegistry,
     pub game_rules: GameRuleRegistry,
+    pub game_events: GameEventRegistry,
     pub fluids: FluidRegistry,
     pub poi_types: PoiTypeRegistry,
     pub enchantments: EnchantmentRegistry,
@@ -661,6 +669,7 @@ impl Registry {
             loot_tables: LootTableRegistry::new(),
             block_entity_types: BlockEntityTypeRegistry::new(),
             game_rules: GameRuleRegistry::new(),
+            game_events: GameEventRegistry::new(),
             fluids: FluidRegistry::new(),
             world_clocks: WorldClockRegistry::new(),
             poi_types: PoiTypeRegistry::new(),
