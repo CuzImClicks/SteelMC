@@ -12,12 +12,13 @@ mod portal;
 mod redstone;
 
 pub use building::{
-    FenceBlock, RotatedPillarBlock, WeatherState, WeatheringCopper, WeatheringCopperFullBlock,
+    CampfireBlock, FenceBlock, RotatedPillarBlock, WeatherState, WeatheringCopper,
+    WeatheringCopperFullBlock,
 };
 pub use container::{BarrelBlock, CraftingTableBlock};
 pub use decoration::{
-    CandleBlock, CeilingHangingSignBlock, StandingSignBlock, TorchBlock, WallHangingSignBlock,
-    WallSignBlock, WallTorchBlock,
+    CakeBlock, CandleBlock, CandleCakeBlock, CeilingHangingSignBlock, StandingSignBlock,
+    TorchBlock, WallHangingSignBlock, WallSignBlock, WallTorchBlock,
 };
 pub use farming::{CactusBlock, CactusFlowerBlock, CropBlock, FarmlandBlock};
 pub use fluid::LiquidBlock;

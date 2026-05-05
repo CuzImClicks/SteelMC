@@ -260,7 +260,7 @@ pub struct Player {
     living_base: SyncMutex<LivingEntityBase>,
 
     /// Player food/hunger state (food level, saturation, exhaustion).
-    food_data: SyncMutex<FoodData>,
+    pub food_data: SyncMutex<FoodData>,
 
     /// Delta-tracking state for `CSetHealth` deduplication.
     health_sync: SyncMutex<HealthSyncState>,
@@ -939,6 +939,13 @@ impl Player {
         }
     }
 
+    /// Returns whether the Player can eat
+    pub fn can_eat(&self, can_always_eat: bool) -> bool {
+        let invulnerable = { self.abilities.lock().invulnerable };
+        let needs_foods = { self.food_data.lock().needs_food() };
+        invulnerable || can_always_eat || needs_foods
+    }
+
     /// Cleans up player resources.
     #[expect(clippy::unused_self, reason = "this is an api function")]
     pub const fn cleanup(&self) {}
@@ -1256,6 +1263,9 @@ impl Entity for Player {
         Player::hurt(self, source, amount)
     }
 
+    fn as_living(&self) -> Option<&dyn LivingEntity> {
+        Some(self)
+    }
     fn change_world(self: Arc<Self>, teleport_transition: &TeleportTransition) {
         let new_world = teleport_transition.target_world.clone();
         if Arc::ptr_eq(&self.get_world(), &new_world) {

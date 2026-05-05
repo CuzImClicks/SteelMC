@@ -1478,7 +1478,7 @@ impl World {
     /// * `block_entity_type` - The type of block entity
     /// * `nbt` - The NBT data to send
     pub fn broadcast_block_entity_update(
-        &self,
+        self: &Arc<Self>,
         pos: BlockPos,
         block_entity_type: BlockEntityTypeRef,
         nbt: NbtCompound,

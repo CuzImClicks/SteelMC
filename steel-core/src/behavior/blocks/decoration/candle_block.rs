@@ -10,17 +10,16 @@ use steel_registry::{
         shapes::SupportType,
     },
     entity_data::Direction,
-    item_stack::ItemStack,
     items::item::BlockHitResult,
-    vanilla_blocks, vanilla_item_tags,
+    vanilla_block_tags, vanilla_blocks, vanilla_item_tags,
 };
 use steel_utils::{
-    BlockPos,
+    BlockPos, BlockStateId,
     types::{self, UpdateFlags},
 };
 
 use crate::{
-    behavior::{BlockBehavior, BlockPlaceContext, InteractionResult},
+    behavior::{BlockBehavior, BlockPlaceContext, InteractionResult, InventoryAccess},
     player,
     world::World,
 };
@@ -41,6 +40,20 @@ impl CandleBlock {
     #[must_use]
     pub const fn new(block: BlockRef) -> Self {
         Self { block }
+    }
+
+    /// Whether or not the Candle can be lit
+    #[must_use]
+    pub fn can_light(state: BlockStateId) -> bool {
+        REGISTRY
+            .blocks
+            .is_in_tag(state.get_block(), &vanilla_block_tags::CANDLES_TAG)
+            && !state
+                .try_get_value(&BlockStateProperties::LIT)
+                .unwrap_or(true)
+            && !state
+                .try_get_value(&BlockStateProperties::WATERLOGGED)
+                .unwrap_or(true)
     }
 }
 
@@ -85,14 +98,15 @@ impl BlockBehavior for CandleBlock {
 
     fn use_item_on(
         &self,
-        item_stack: &ItemStack,
         state: steel_utils::BlockStateId,
         world: &Arc<World>,
         pos: BlockPos,
         _player: &player::Player,
         _hand: types::InteractionHand,
         _hit_result: &BlockHitResult,
+        inv: &mut InventoryAccess,
     ) -> InteractionResult {
+        let item_stack = inv.item();
         if item_stack.is_empty() {
             if !state.get_value(&LIT_PROPERTY) {
                 return InteractionResult::Pass;
