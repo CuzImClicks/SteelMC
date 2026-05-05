@@ -13,23 +13,40 @@ pub(crate) fn build() -> TokenStream {
         serde_json::from_str(&recipe_property_sets_json)
             .expect("Failed to parse recipe_property_sets.json");
 
-    let recipe_property_sets: Vec<TokenStream> = recipe_property_sets_entries
+    let mut statics = TokenStream::new();
+    let mut registrations = TokenStream::new();
+
+    recipe_property_sets_entries
         .iter()
-        .map(|(key, list)| {
-            let key = Ident::new(&key.to_snake_case().to_uppercase(), Span::call_site());
+        .for_each(|(ident, list)| {
+            let key = Ident::new(&ident.to_snake_case().to_uppercase(), Span::call_site());
             let items = list.iter().map(|it| {
-                let ident = Ident::new(it.strip_prefix("minecraft:").unwrap_or(it), Span::call_site());
+                let ident = Ident::new(
+                    it.strip_prefix("minecraft:").unwrap_or(it),
+                    Span::call_site(),
+                );
                 quote! { &ITEMS.#ident }
             });
-            quote! {
-                pub static #key: LazyLock<&'static [ItemRef]> = LazyLock::new(|| Box::leak(vec![#(#items),*].into_boxed_slice()));
-            }
-        })
-        .collect();
+
+            statics.extend(quote! {
+                pub static #key: RecipePropertySet = RecipePropertySet {
+                    key: Identifier::vanilla_static(#ident),
+                    items: OnceLock::new()
+                };
+            });
+            registrations
+                .extend(quote! { registry.register_with_items(&#key, vec![#(#items),*]); });
+        });
 
     quote! {
-        use crate::{items::ItemRef, vanilla_items::ITEMS};
-        use std::sync::LazyLock;
-        #(#recipe_property_sets)*
+        use steel_utils::Identifier;
+        use crate::{items::ItemRef, recipe::{RecipePropertySet, RecipePropertySetRegistry}, vanilla_items::ITEMS};
+        use std::sync::OnceLock;
+
+        #statics
+
+        pub fn register_recipe_property_sets(registry: &mut RecipePropertySetRegistry) {
+            #registrations
+        }
     }
 }

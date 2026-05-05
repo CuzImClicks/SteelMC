@@ -1,5 +1,6 @@
 #![feature(const_trait_impl, const_cmp, derive_const)]
 
+use crate::recipe::RecipePropertySetRegistry;
 use crate::world_clock::WorldClockRegistry;
 use crate::{
     attribute::AttributeRegistry,
@@ -499,6 +500,7 @@ pub struct Registry {
     pub poi_types: PoiTypeRegistry,
     pub enchantments: EnchantmentRegistry,
     pub world_clocks: WorldClockRegistry,
+    pub recipe_property_sets: RecipePropertySetRegistry,
 }
 
 impl Debug for Registry {
@@ -670,6 +672,7 @@ impl Registry {
             world_clocks: WorldClockRegistry::new(),
             poi_types: PoiTypeRegistry::new(),
             enchantments: EnchantmentRegistry::new(),
+            recipe_property_sets: RecipePropertySetRegistry::new(),
         }
     }
 }

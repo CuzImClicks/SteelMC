@@ -5,6 +5,7 @@
 
 mod crafting;
 mod ingredient;
+mod recipe_property_sets;
 mod registry;
 
 pub use crafting::{
@@ -12,4 +13,7 @@ pub use crafting::{
     ShapedRecipe, ShapelessRecipe,
 };
 pub use ingredient::Ingredient;
+pub use recipe_property_sets::{
+    RecipePropertySet, RecipePropertySetRef, RecipePropertySetRegistry,
+};
 pub use registry::RecipeRegistry;
