@@ -35,7 +35,7 @@ pub(crate) fn build() -> TokenStream {
                 };
             });
             registrations
-                .extend(quote! { registry.register_with_items(&#key, vec![#(#items),*]); });
+                .extend(quote! { registry.register_with_items(&#key, vec![#(#items),*]); registry.register(&#key); });
         });
 
     quote! {

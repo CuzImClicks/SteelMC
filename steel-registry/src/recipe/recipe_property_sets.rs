@@ -56,15 +56,18 @@ impl crate::RegistryExt for RecipePropertySetRegistry {
     type Entry = RecipePropertySet;
 
     fn freeze(&mut self) {
+        if !self.allows_registering {
+            return;
+        }
         for (key, value) in self.pending_sets.drain() {
             if let Some(set) = self
                 .recipe_property_set_by_key
                 .get(&key)
                 .and_then(|&id| self.recipe_property_set_by_id.get(id))
             {
-                set.items
-                    .set(value)
-                    .unwrap_or_else(|_| panic!("failed to put items into `RecipePropertySet`"));
+                set.items.set(value).unwrap_or_else(|_| {
+                    log::error!("failed to put items into `RecipePropertySet` - `{:?}` because OnceLock was already initialized.", key)
+                });
             }
         }
         self.allows_registering = false;

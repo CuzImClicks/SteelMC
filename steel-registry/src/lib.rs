@@ -585,6 +585,10 @@ impl Registry {
 
         vanilla_world_clocks::register_world_clocks(&mut registry.world_clocks);
 
+        vanilla_recipe_property_sets::register_recipe_property_sets(
+            &mut registry.recipe_property_sets,
+        );
+
         registry
     }
 
@@ -628,6 +632,7 @@ impl Registry {
         self.poi_types.freeze();
         self.enchantments.freeze();
         self.world_clocks.freeze();
+        self.recipe_property_sets.freeze();
     }
 
     #[must_use]

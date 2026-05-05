@@ -202,7 +202,12 @@ impl BlockBehavior for CampfireBlock {
             return InteractionResult::Fail;
         };
 
-        if !vanilla_recipe_property_sets::CAMPFIRE_INPUT.contains(&item_stack.item()) {
+        if !vanilla_recipe_property_sets::CAMPFIRE_INPUT
+            .items
+            .get()
+            .expect("campfire input should be initialized")
+            .contains(&item_stack.item())
+        {
             return InteractionResult::TryEmptyHandInteraction;
         }
 
