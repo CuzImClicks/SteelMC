@@ -66,7 +66,7 @@ impl crate::RegistryExt for RecipePropertySetRegistry {
                 .and_then(|&id| self.recipe_property_set_by_id.get(id))
             {
                 set.items.set(value).unwrap_or_else(|_| {
-                    log::error!("failed to put items into `RecipePropertySet` - `{:?}` because OnceLock was already initialized.", key)
+                    log::error!("Failed to put items into `RecipePropertySet` - `{:?}` because the registry isn't frozen, but the `OnceLock` somehow already was initialized.", key)
                 });
             }
         }
