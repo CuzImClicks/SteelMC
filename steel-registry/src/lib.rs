@@ -1,5 +1,6 @@
 #![feature(const_trait_impl, const_cmp, derive_const)]
 
+use crate::recipe::RecipePropertySetRegistry;
 use crate::world_clock::WorldClockRegistry;
 use crate::{
     attribute::AttributeRegistry,
@@ -257,6 +258,11 @@ pub mod vanilla_recipes;
 
 #[expect(warnings)]
 #[rustfmt::skip]
+#[path = "generated/vanilla_recipe_property_sets.rs"]
+pub mod vanilla_recipe_property_sets;
+
+#[expect(warnings)]
+#[rustfmt::skip]
 #[path = "generated/vanilla_entities.rs"]
 pub mod vanilla_entities;
 
@@ -494,6 +500,7 @@ pub struct Registry {
     pub poi_types: PoiTypeRegistry,
     pub enchantments: EnchantmentRegistry,
     pub world_clocks: WorldClockRegistry,
+    pub recipe_property_sets: RecipePropertySetRegistry,
 }
 
 impl Debug for Registry {
@@ -578,6 +585,10 @@ impl Registry {
 
         vanilla_world_clocks::register_world_clocks(&mut registry.world_clocks);
 
+        vanilla_recipe_property_sets::register_recipe_property_sets(
+            &mut registry.recipe_property_sets,
+        );
+
         registry
     }
 
@@ -621,6 +632,7 @@ impl Registry {
         self.poi_types.freeze();
         self.enchantments.freeze();
         self.world_clocks.freeze();
+        self.recipe_property_sets.freeze();
     }
 
     #[must_use]
@@ -665,6 +677,7 @@ impl Registry {
             world_clocks: WorldClockRegistry::new(),
             poi_types: PoiTypeRegistry::new(),
             enchantments: EnchantmentRegistry::new(),
+            recipe_property_sets: RecipePropertySetRegistry::new(),
         }
     }
 }
