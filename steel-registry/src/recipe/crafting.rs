@@ -2,9 +2,12 @@
 
 use steel_utils::Identifier;
 
-use crate::{item_stack::ItemStack, items::ItemRef};
-
 use super::ingredient::Ingredient;
+use crate::{
+    item_stack::ItemStack,
+    items::ItemRef,
+    recipe::{SmeltingRecipe, StonecuttingRecipe},
+};
 
 /// Category for crafting recipes (used by recipe book).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -12,6 +15,7 @@ pub enum CraftingCategory {
     Building,
     Redstone,
     Equipment,
+    Food,
     Misc,
 }
 
@@ -250,6 +254,8 @@ impl ShapelessRecipe {
 pub enum CraftingRecipe {
     Shaped(&'static ShapedRecipe),
     Shapeless(&'static ShapelessRecipe),
+    Smelting(&'static SmeltingRecipe),
+    Stonecutting(&'static StonecuttingRecipe),
 }
 
 impl CraftingRecipe {
@@ -259,15 +265,19 @@ impl CraftingRecipe {
         match self {
             Self::Shaped(r) => &r.id,
             Self::Shapeless(r) => &r.id,
+            Self::Smelting(r) => &r.ident,
+            Self::Stonecutting(r) => &r.ident,
         }
     }
 
     /// Returns the recipe category.
     #[must_use]
-    pub fn category(&self) -> CraftingCategory {
+    pub fn category(&self) -> Option<CraftingCategory> {
         match self {
-            Self::Shaped(r) => r.category,
-            Self::Shapeless(r) => r.category,
+            Self::Shaped(r) => Some(r.category),
+            Self::Shapeless(r) => Some(r.category),
+            Self::Smelting(r) => Some(r.category),
+            Self::Stonecutting(_r) => None,
         }
     }
 
@@ -277,6 +287,8 @@ impl CraftingRecipe {
         match self {
             Self::Shaped(r) => &r.result,
             Self::Shapeless(r) => &r.result,
+            Self::Smelting(r) => &r.result,
+            Self::Stonecutting(r) => &r.result,
         }
     }
 
@@ -287,6 +299,8 @@ impl CraftingRecipe {
         match self {
             Self::Shaped(r) => r.matches(input),
             Self::Shapeless(r) => r.matches(input),
+            Self::Smelting(r) => r.matches(input),
+            Self::Stonecutting(r) => r.matches(input),
         }
     }
 
@@ -296,6 +310,8 @@ impl CraftingRecipe {
         match self {
             Self::Shaped(r) => r.assemble(),
             Self::Shapeless(r) => r.assemble(),
+            Self::Smelting(r) => r.assemble(),
+            Self::Stonecutting(r) => r.assemble(),
         }
     }
 
@@ -305,6 +321,8 @@ impl CraftingRecipe {
         match self {
             Self::Shaped(r) => r.get_remaining_items(input),
             Self::Shapeless(r) => r.get_remaining_items(input),
+            Self::Smelting(_r) => vec![],
+            Self::Stonecutting(_r) => vec![],
         }
     }
 
@@ -314,6 +332,8 @@ impl CraftingRecipe {
         match self {
             Self::Shaped(r) => r.fits_in_2x2(),
             Self::Shapeless(r) => r.fits_in_2x2(),
+            Self::Smelting(_r) => false,
+            Self::Stonecutting(_r) => false,
         }
     }
 }

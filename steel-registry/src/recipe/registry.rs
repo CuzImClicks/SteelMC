@@ -3,6 +3,8 @@
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 
+use crate::recipe::{SmeltingRecipe, StonecuttingRecipe};
+
 use super::crafting::{CraftingInput, CraftingRecipe, ShapedRecipe, ShapelessRecipe};
 
 /// Registry for all recipes.
@@ -15,6 +17,16 @@ pub struct RecipeRegistry {
     shaped_recipes: Vec<&'static ShapedRecipe>,
     /// All shapeless crafting recipes (for type-specific iteration).
     shapeless_recipes: Vec<&'static ShapelessRecipe>,
+    /// All smelting recipes (for type-specific iteration).
+    smelting_recipes: Vec<&'static SmeltingRecipe>,
+    /// All campfire recipes (for type-specific iteration).
+    campfire_recipes: Vec<&'static SmeltingRecipe>,
+    /// All smoking recipes (for type-specific iteration).
+    smoking_recipes: Vec<&'static SmeltingRecipe>,
+    /// All blasting recipes (for type-specific iteration).
+    blasting_recipes: Vec<&'static SmeltingRecipe>,
+    /// All stonecutting recipes (for type-specific iteration).
+    stonecutting_recipes: Vec<&'static StonecuttingRecipe>,
     /// Whether registration is still allowed.
     allows_registering: bool,
 }
@@ -35,6 +47,11 @@ impl RecipeRegistry {
             shaped_recipes: Vec::new(),
             shapeless_recipes: Vec::new(),
             allows_registering: true,
+            smelting_recipes: Vec::new(),
+            campfire_recipes: Vec::new(),
+            smoking_recipes: Vec::new(),
+            blasting_recipes: Vec::new(),
+            stonecutting_recipes: Vec::new(),
         }
     }
 
@@ -62,6 +79,66 @@ impl RecipeRegistry {
         self.recipes_by_id
             .push(Box::leak(Box::new(CraftingRecipe::Shapeless(recipe))));
         self.shapeless_recipes.push(recipe);
+    }
+
+    pub fn register_smelting(&mut self, recipe: &'static SmeltingRecipe) {
+        assert!(
+            self.allows_registering,
+            "Cannot register recipes after the registry has been frozen"
+        );
+        let id = self.recipes_by_id.len();
+        self.recipes_by_key.insert(recipe.ident.clone(), id);
+        self.recipes_by_id
+            .push(Box::leak(Box::new(CraftingRecipe::Smelting(recipe))));
+        self.smelting_recipes.push(recipe);
+    }
+
+    pub fn register_campfire(&mut self, recipe: &'static SmeltingRecipe) {
+        assert!(
+            self.allows_registering,
+            "Cannot register recipes after the registry has been frozen"
+        );
+        let id = self.recipes_by_id.len();
+        self.recipes_by_key.insert(recipe.ident.clone(), id);
+        self.recipes_by_id
+            .push(Box::leak(Box::new(CraftingRecipe::Smelting(recipe))));
+        self.campfire_recipes.push(recipe);
+    }
+
+    pub fn register_smoking(&mut self, recipe: &'static SmeltingRecipe) {
+        assert!(
+            self.allows_registering,
+            "Cannot register recipes after the registry has been frozen"
+        );
+        let id = self.recipes_by_id.len();
+        self.recipes_by_key.insert(recipe.ident.clone(), id);
+        self.recipes_by_id
+            .push(Box::leak(Box::new(CraftingRecipe::Smelting(recipe))));
+        self.smoking_recipes.push(recipe);
+    }
+
+    pub fn register_blasting(&mut self, recipe: &'static SmeltingRecipe) {
+        assert!(
+            self.allows_registering,
+            "Cannot register recipes after the registry has been frozen"
+        );
+        let id = self.recipes_by_id.len();
+        self.recipes_by_key.insert(recipe.ident.clone(), id);
+        self.recipes_by_id
+            .push(Box::leak(Box::new(CraftingRecipe::Smelting(recipe))));
+        self.blasting_recipes.push(recipe);
+    }
+
+    pub fn register_stonecutting(&mut self, recipe: &'static StonecuttingRecipe) {
+        assert!(
+            self.allows_registering,
+            "Cannot register recipes after the registry has been frozen"
+        );
+        let id = self.recipes_by_id.len();
+        self.recipes_by_key.insert(recipe.ident.clone(), id);
+        self.recipes_by_id
+            .push(Box::leak(Box::new(CraftingRecipe::Stonecutting(recipe))));
+        self.stonecutting_recipes.push(recipe);
     }
 
     /// Finds a matching crafting recipe for the given positioned input.

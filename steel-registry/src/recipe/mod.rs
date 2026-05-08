@@ -7,6 +7,8 @@ mod crafting;
 mod ingredient;
 pub mod recipe_property_sets;
 mod registry;
+mod smelting;
+mod stonecutting;
 
 pub use crafting::{
     CraftingCategory, CraftingInput, CraftingRecipe, PositionedCraftingInput, RecipeResult,
@@ -17,3 +19,5 @@ pub use recipe_property_sets::{
     RecipePropertySet, RecipePropertySetRef, RecipePropertySetRegistry,
 };
 pub use registry::RecipeRegistry;
+pub use smelting::SmeltingRecipe;
+pub use stonecutting::StonecuttingRecipe;
