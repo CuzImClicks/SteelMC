@@ -12,6 +12,8 @@ use crate::{
     world::game_event_context::GameEventContext,
 };
 
+use super::copper_chest_events::emit_connected_chest_block_change;
+
 /// Behavior for the honeycomb item. Waxes copper blocks and signs.
 #[item_behavior]
 pub struct HoneycombItem;
@@ -41,6 +43,13 @@ impl ItemBehavior for HoneycombItem {
                 pos,
                 0,
                 Some(context.player.id),
+            );
+            emit_connected_chest_block_change(
+                context.world,
+                pos,
+                old_block_state,
+                context.player,
+                Some(level_events::PARTICLES_AND_SOUND_WAX_ON),
             );
             return InteractionResult::Success;
         }

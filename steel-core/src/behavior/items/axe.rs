@@ -23,6 +23,8 @@ use crate::{
     world::game_event_context::GameEventContext,
 };
 
+use super::copper_chest_events::emit_connected_chest_block_change;
+
 const AXIS_PROPERTY: EnumProperty<Axis> = BlockStateProperties::AXIS;
 
 /// Behavior for Axes, when used on wood or logs it turns them into their stripped variants
@@ -82,6 +84,13 @@ impl ItemBehavior for AxeItem {
             context
                 .world
                 .level_event(event, pos, 0, Some(context.player.id));
+            emit_connected_chest_block_change(
+                context.world,
+                pos,
+                old_block_state,
+                context.player,
+                Some(event),
+            );
         }
 
         context.world.game_event(

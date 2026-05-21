@@ -168,14 +168,14 @@ impl GameEventListenerStorage {
             let Some(listener_pos) = listener.listener_pos() else {
                 continue;
             };
-            let distance_sq =
-                block_distance_sq(source_block_pos, BlockPos::from(listener_pos)) as f64;
+            let block_distance_sq =
+                block_distance_sq(source_block_pos, BlockPos::from(listener_pos));
             let listener_radius = listener.listener_radius().max(0);
             let listener_radius_sq = i64::from(listener_radius) * i64::from(listener_radius);
-            if distance_sq <= listener_radius_sq as f64 {
+            if block_distance_sq <= listener_radius_sq {
                 in_range.push(QueuedListener {
                     listener,
-                    distance_sq,
+                    distance_sq: exact_distance_sq(source_pos, listener_pos),
                 });
             }
         }
@@ -188,6 +188,13 @@ fn block_distance_sq(left: BlockPos, right: BlockPos) -> i64 {
     let dx = i64::from(left.x()) - i64::from(right.x());
     let dy = i64::from(left.y()) - i64::from(right.y());
     let dz = i64::from(left.z()) - i64::from(right.z());
+    dx * dx + dy * dy + dz * dz
+}
+
+fn exact_distance_sq(left: DVec3, right: DVec3) -> f64 {
+    let dx = left.x - right.x;
+    let dy = left.y - right.y;
+    let dz = left.z - right.z;
     dx * dx + dy * dy + dz * dz
 }
 
@@ -274,5 +281,24 @@ mod tests {
                 .collect_in_range(DVec3::new(0.5, 64.5, 0.5), 16)
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn collect_in_range_records_exact_distance_for_delivery_sorting() {
+        let storage = GameEventListenerStorage::new();
+        let listener: SharedGameEventListener = Arc::new(FixedListener {
+            pos: DVec3::new(0.1, 64.5, 0.5),
+            radius: 16,
+        });
+
+        storage.register(
+            SectionPos::from_block_pos(BlockPos::new(0, 64, 0)),
+            Arc::clone(&listener),
+        );
+
+        let matches = storage.collect_in_range(DVec3::new(0.9, 64.5, 0.5), 16);
+
+        assert_eq!(matches.len(), 1);
+        assert!((matches[0].distance_sq - 0.64).abs() < f64::EPSILON);
     }
 }
