@@ -477,7 +477,7 @@ impl BlockBehavior for WeatheringCopperDoorBlock {
 #[cfg(test)]
 mod tests {
     use steel_registry::fluid::FluidRef;
-    use steel_registry::{REGISTRY, Registry, vanilla_blocks};
+    use steel_registry::{test_support::init_test_registry, vanilla_blocks};
     use steel_utils::BlockPos;
 
     use super::*;
@@ -526,15 +526,9 @@ mod tests {
         }
     }
 
-    fn init_registry() {
-        let mut registry = Registry::new_vanilla();
-        registry.freeze();
-        let _ = REGISTRY.init(registry);
-    }
-
     #[test]
     fn lower_half_copies_transformed_upper_half_state() {
-        init_registry();
+        init_test_registry();
         let behavior = DoorBlock::new(&vanilla_blocks::SPRUCE_DOOR, true, 0, 0);
         let lower = vanilla_blocks::SPRUCE_DOOR
             .default_state()

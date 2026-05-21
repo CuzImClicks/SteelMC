@@ -443,6 +443,24 @@ impl Deref for RegistryLock {
 
 pub static REGISTRY: RegistryLock = RegistryLock(OnceLock::new());
 
+#[cfg(any(test, feature = "test-utils"))]
+pub mod test_support {
+    use std::sync::Once;
+
+    use crate::{REGISTRY, Registry};
+
+    static INIT_REGISTRY: Once = Once::new();
+
+    /// Initializes the global registry with frozen vanilla data for tests.
+    pub fn init_test_registry() {
+        INIT_REGISTRY.call_once(|| {
+            let mut registry = Registry::new_vanilla();
+            registry.freeze();
+            let _ = REGISTRY.init(registry);
+        });
+    }
+}
+
 /// Trait for types stored in a registry, allowing self-lookup of their numeric ID.
 pub trait RegistryEntry: 'static {
     fn key(&self) -> &Identifier;

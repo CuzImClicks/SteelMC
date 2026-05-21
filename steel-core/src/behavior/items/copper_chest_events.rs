@@ -50,26 +50,17 @@ fn connected_chest_pos(pos: BlockPos, state: BlockStateId) -> Option<BlockPos> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Once;
-
     use steel_registry::blocks::block_state_ext::BlockStateExt;
     use steel_registry::blocks::properties::{BlockStateProperties, ChestType, Direction};
+    use steel_registry::test_support::init_test_registry;
     use steel_registry::vanilla_blocks;
-    use steel_registry::{REGISTRY, Registry};
     use steel_utils::BlockPos;
 
     use crate::behavior::items::copper_chest_events::connected_chest_pos;
 
-    fn init_registry() {
-        static INIT_REGISTRY: Once = Once::new();
-        INIT_REGISTRY.call_once(|| {
-            let _ = REGISTRY.init(Registry::new_vanilla());
-        });
-    }
-
     #[test]
     fn connected_chest_pos_matches_vanilla_left_and_right_offsets() {
-        init_registry();
+        init_test_registry();
 
         let pos = BlockPos::new(10, 64, 10);
         let north_left = vanilla_blocks::COPPER_CHEST
@@ -87,7 +78,7 @@ mod tests {
 
     #[test]
     fn connected_chest_pos_ignores_single_chests() {
-        init_registry();
+        init_test_registry();
 
         let pos = BlockPos::new(10, 64, 10);
         let single = vanilla_blocks::COPPER_CHEST

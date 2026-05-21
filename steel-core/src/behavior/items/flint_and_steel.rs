@@ -173,29 +173,17 @@ fn fire_charge_pitch() -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Once;
-
     use steel_registry::{
-        REGISTRY, Registry,
         blocks::{block_state_ext::BlockStateExt, properties::BlockStateProperties},
+        test_support::init_test_registry,
         vanilla_blocks,
     };
 
     use super::can_light;
 
-    static INIT_REGISTRY: Once = Once::new();
-
-    fn init_registry() {
-        INIT_REGISTRY.call_once(|| {
-            let mut registry = Registry::new_vanilla();
-            registry.freeze();
-            let _ = REGISTRY.init(registry);
-        });
-    }
-
     #[test]
     fn can_light_rejects_waterlogged_campfires_and_candles() {
-        init_registry();
+        init_test_registry();
 
         let waterlogged_campfire = vanilla_blocks::CAMPFIRE
             .default_state()
@@ -218,7 +206,7 @@ mod tests {
 
     #[test]
     fn can_light_accepts_unlit_candle_cakes() {
-        init_registry();
+        init_test_registry();
 
         let unlit_candle_cake = vanilla_blocks::CANDLE_CAKE
             .default_state()
