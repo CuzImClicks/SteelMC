@@ -34,9 +34,7 @@ impl ItemBehavior for AxeItem {
         let has_block_item_intent = context.hand == InteractionHand::MainHand
             && context
                 .inv
-                .inventory()
-                .get_offhand_item()
-                .has(BLOCKS_ATTACKS)
+                .with_inventory(|inv| inv.get_offhand_item().has(BLOCKS_ATTACKS))
             && !context.player.is_secondary_use_active();
 
         if has_block_item_intent {
@@ -93,7 +91,9 @@ impl ItemBehavior for AxeItem {
         );
 
         let has_infinite_materials = context.player.has_infinite_materials();
-        context.inv.item().hurt_and_break(1, has_infinite_materials);
+        context
+            .inv
+            .with_item(|item| item.hurt_and_break(1, has_infinite_materials));
 
         InteractionResult::Success
     }
