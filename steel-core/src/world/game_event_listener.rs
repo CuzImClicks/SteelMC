@@ -51,10 +51,107 @@ struct QueuedListener {
     distance_sq: f64,
 }
 
+#[derive(Default)]
+struct SectionListeners {
+    listeners: Vec<SharedGameEventListener>,
+    pending_additions: Vec<SharedGameEventListener>,
+    pending_removals: Vec<SharedGameEventListener>,
+    processing_depth: usize,
+}
+
+impl SectionListeners {
+    fn register(&mut self, listener: SharedGameEventListener) {
+        if self.processing_depth == 0 {
+            if !contains_listener(&self.listeners, &listener) {
+                self.listeners.push(listener);
+            }
+            return;
+        }
+
+        if contains_listener(&self.listeners, &listener)
+            && !contains_listener(&self.pending_removals, &listener)
+        {
+            return;
+        }
+        if !contains_listener(&self.pending_additions, &listener) {
+            self.pending_additions.push(listener);
+        }
+    }
+
+    fn unregister(&mut self, listener: &SharedGameEventListener) -> bool {
+        if self.processing_depth == 0 {
+            let old_len = self.listeners.len();
+            self.listeners
+                .retain(|existing| !Arc::ptr_eq(existing, listener));
+            return self.listeners.len() != old_len;
+        }
+
+        let is_registered = contains_listener(&self.listeners, listener)
+            || contains_listener(&self.pending_additions, listener);
+        if !is_registered {
+            return false;
+        }
+
+        if !contains_listener(&self.pending_removals, listener) {
+            self.pending_removals.push(Arc::clone(listener));
+        }
+        true
+    }
+
+    const fn begin_processing(&mut self) {
+        self.processing_depth += 1;
+    }
+
+    fn end_processing(&mut self) {
+        self.processing_depth -= 1;
+        if self.processing_depth != 0 {
+            return;
+        }
+
+        for listener in self.pending_additions.drain(..) {
+            if !contains_listener(&self.listeners, &listener) {
+                self.listeners.push(listener);
+            }
+        }
+
+        if !self.pending_removals.is_empty() {
+            self.listeners
+                .retain(|listener| !contains_listener(&self.pending_removals, listener));
+            self.pending_removals.clear();
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.listeners.is_empty()
+            && self.pending_additions.is_empty()
+            && self.pending_removals.is_empty()
+    }
+}
+
+fn contains_listener(
+    listeners: &[SharedGameEventListener],
+    listener: &SharedGameEventListener,
+) -> bool {
+    listeners
+        .iter()
+        .any(|existing| Arc::ptr_eq(existing, listener))
+}
+
+struct SectionProcessingGuard<'a> {
+    storage: &'a GameEventListenerStorage,
+    section_pos: SectionPos,
+}
+
+impl Drop for SectionProcessingGuard<'_> {
+    fn drop(&mut self) {
+        self.storage.end_section_processing(self.section_pos);
+    }
+}
+
 /// Section-indexed game event listener storage.
 #[derive(Default)]
 pub struct GameEventListenerStorage {
-    listeners_by_section: SyncMutex<FxHashMap<SectionPos, Vec<SharedGameEventListener>>>,
+    listeners_by_section: SyncMutex<FxHashMap<SectionPos, SectionListeners>>,
 }
 
 impl GameEventListenerStorage {
@@ -67,29 +164,21 @@ impl GameEventListenerStorage {
     /// Registers `listener` in `section_pos`.
     pub fn register(&self, section_pos: SectionPos, listener: SharedGameEventListener) {
         let mut listeners_by_section = self.listeners_by_section.lock();
-        let listeners = listeners_by_section.entry(section_pos).or_default();
-        if listeners
-            .iter()
-            .any(|existing| Arc::ptr_eq(existing, &listener))
-        {
-            return;
-        }
-        listeners.push(listener);
+        listeners_by_section
+            .entry(section_pos)
+            .or_default()
+            .register(listener);
     }
 
     /// Unregisters `listener` from `section_pos`.
     pub fn unregister(&self, section_pos: SectionPos, listener: &SharedGameEventListener) -> bool {
         let mut listeners_by_section = self.listeners_by_section.lock();
-        let Some(listeners) = listeners_by_section.get_mut(&section_pos) else {
+        let Some(section_listeners) = listeners_by_section.get_mut(&section_pos) else {
             return false;
         };
 
-        let old_len = listeners.len();
-        listeners.retain(|existing| !Arc::ptr_eq(existing, listener));
-        let removed = listeners.len() != old_len;
-        let is_empty = listeners.is_empty();
-
-        if is_empty {
+        let removed = section_listeners.unregister(listener);
+        if section_listeners.is_empty() {
             listeners_by_section.remove(&section_pos);
         }
 
@@ -107,7 +196,7 @@ impl GameEventListenerStorage {
         let mut by_distance = Vec::new();
         let mut handled = 0;
 
-        for queued in self.collect_in_range(source_pos, event.notification_radius) {
+        self.visit_in_range(source_pos, event.notification_radius, |queued| {
             if queued.listener.delivery_mode() == GameEventDeliveryMode::ByDistance {
                 by_distance.push(queued);
             } else if queued
@@ -116,7 +205,7 @@ impl GameEventListenerStorage {
             {
                 handled += 1;
             }
-        }
+        });
 
         by_distance.sort_by(|left, right| left.distance_sq.total_cmp(&right.distance_sq));
         for queued in by_distance {
@@ -131,7 +220,21 @@ impl GameEventListenerStorage {
         handled
     }
 
+    #[cfg(test)]
     fn collect_in_range(&self, source_pos: DVec3, notification_radius: i32) -> Vec<QueuedListener> {
+        let mut in_range = Vec::new();
+        self.visit_in_range(source_pos, notification_radius, |queued| {
+            in_range.push(queued);
+        });
+        in_range
+    }
+
+    fn visit_in_range(
+        &self,
+        source_pos: DVec3,
+        notification_radius: i32,
+        mut visit: impl FnMut(QueuedListener),
+    ) {
         let notification_radius = notification_radius.max(0);
         let source_block_pos = BlockPos::from(source_pos);
         let section_min_x =
@@ -147,40 +250,77 @@ impl GameEventListenerStorage {
         let section_max_z =
             SectionPos::block_to_section_coord(source_block_pos.z() + notification_radius);
 
-        let listeners = {
-            let listeners_by_section = self.listeners_by_section.lock();
-            let mut listeners = Vec::new();
-            for section_x in section_min_x..=section_max_x {
-                for section_z in section_min_z..=section_max_z {
-                    for section_y in section_min_y..=section_max_y {
-                        let section_pos = SectionPos::new(section_x, section_y, section_z);
-                        if let Some(section_listeners) = listeners_by_section.get(&section_pos) {
-                            listeners.extend(section_listeners.iter().map(Arc::clone));
+        for section_x in section_min_x..=section_max_x {
+            for section_z in section_min_z..=section_max_z {
+                for section_y in section_min_y..=section_max_y {
+                    let section_pos = SectionPos::new(section_x, section_y, section_z);
+                    let Some(_processing_guard) = self.begin_section_processing(section_pos) else {
+                        continue;
+                    };
+
+                    let mut cursor = 0;
+                    while let Some(listener) = self.next_section_listener(section_pos, &mut cursor)
+                    {
+                        let Some(listener_pos) = listener.listener_pos() else {
+                            continue;
+                        };
+                        let block_distance_sq =
+                            block_distance_sq(source_block_pos, BlockPos::from(listener_pos));
+                        let listener_radius = listener.listener_radius().max(0);
+                        let listener_radius_sq =
+                            i64::from(listener_radius) * i64::from(listener_radius);
+                        if block_distance_sq <= listener_radius_sq {
+                            visit(QueuedListener {
+                                listener,
+                                distance_sq: exact_distance_sq(source_pos, listener_pos),
+                            });
                         }
                     }
                 }
             }
-            listeners
-        };
-
-        let mut in_range = Vec::new();
-        for listener in listeners {
-            let Some(listener_pos) = listener.listener_pos() else {
-                continue;
-            };
-            let block_distance_sq =
-                block_distance_sq(source_block_pos, BlockPos::from(listener_pos));
-            let listener_radius = listener.listener_radius().max(0);
-            let listener_radius_sq = i64::from(listener_radius) * i64::from(listener_radius);
-            if block_distance_sq <= listener_radius_sq {
-                in_range.push(QueuedListener {
-                    listener,
-                    distance_sq: exact_distance_sq(source_pos, listener_pos),
-                });
-            }
         }
+    }
 
-        in_range
+    fn begin_section_processing(
+        &self,
+        section_pos: SectionPos,
+    ) -> Option<SectionProcessingGuard<'_>> {
+        let mut listeners_by_section = self.listeners_by_section.lock();
+        let section_listeners = listeners_by_section.get_mut(&section_pos)?;
+        section_listeners.begin_processing();
+        Some(SectionProcessingGuard {
+            storage: self,
+            section_pos,
+        })
+    }
+
+    fn next_section_listener(
+        &self,
+        section_pos: SectionPos,
+        cursor: &mut usize,
+    ) -> Option<SharedGameEventListener> {
+        let listeners_by_section = self.listeners_by_section.lock();
+        let section_listeners = listeners_by_section.get(&section_pos)?;
+        while *cursor < section_listeners.listeners.len() {
+            let listener = Arc::clone(&section_listeners.listeners[*cursor]);
+            *cursor += 1;
+            if contains_listener(&section_listeners.pending_removals, &listener) {
+                continue;
+            }
+            return Some(listener);
+        }
+        None
+    }
+
+    fn end_section_processing(&self, section_pos: SectionPos) {
+        let mut listeners_by_section = self.listeners_by_section.lock();
+        let Some(section_listeners) = listeners_by_section.get_mut(&section_pos) else {
+            return;
+        };
+        section_listeners.end_processing();
+        if section_listeners.is_empty() {
+            listeners_by_section.remove(&section_pos);
+        }
     }
 }
 
@@ -300,5 +440,110 @@ mod tests {
 
         assert_eq!(matches.len(), 1);
         assert!((matches[0].distance_sq - 0.64).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn visit_in_range_skips_listener_unregistered_before_turn() {
+        let storage = GameEventListenerStorage::new();
+        let section_pos = SectionPos::from_block_pos(BlockPos::new(0, 64, 0));
+        let first: SharedGameEventListener = Arc::new(FixedListener {
+            pos: DVec3::new(0.0, 64.0, 0.0),
+            radius: 16,
+        });
+        let second: SharedGameEventListener = Arc::new(FixedListener {
+            pos: DVec3::new(1.0, 64.0, 0.0),
+            radius: 16,
+        });
+        let third: SharedGameEventListener = Arc::new(FixedListener {
+            pos: DVec3::new(2.0, 64.0, 0.0),
+            radius: 16,
+        });
+
+        storage.register(section_pos, Arc::clone(&first));
+        storage.register(section_pos, Arc::clone(&second));
+        storage.register(section_pos, Arc::clone(&third));
+
+        let mut visited = Vec::new();
+        storage.visit_in_range(DVec3::new(0.5, 64.5, 0.5), 16, |queued| {
+            if Arc::ptr_eq(&queued.listener, &first) {
+                assert!(storage.unregister(section_pos, &second));
+                visited.push(1);
+            } else if Arc::ptr_eq(&queued.listener, &second) {
+                visited.push(2);
+            } else if Arc::ptr_eq(&queued.listener, &third) {
+                visited.push(3);
+            }
+        });
+
+        assert_eq!(visited, [1, 3]);
+        let matches = storage.collect_in_range(DVec3::new(0.5, 64.5, 0.5), 16);
+        assert_eq!(matches.len(), 2);
+        assert!(
+            matches
+                .iter()
+                .all(|queued| { !Arc::ptr_eq(&queued.listener, &second) })
+        );
+    }
+
+    #[test]
+    fn visit_in_range_defers_same_section_registration_until_next_visit() {
+        let storage = GameEventListenerStorage::new();
+        let section_pos = SectionPos::from_block_pos(BlockPos::new(0, 64, 0));
+        let first: SharedGameEventListener = Arc::new(FixedListener {
+            pos: DVec3::new(0.0, 64.0, 0.0),
+            radius: 16,
+        });
+        let added: SharedGameEventListener = Arc::new(FixedListener {
+            pos: DVec3::new(1.0, 64.0, 0.0),
+            radius: 16,
+        });
+
+        storage.register(section_pos, Arc::clone(&first));
+
+        let mut visited = Vec::new();
+        storage.visit_in_range(DVec3::new(0.5, 64.5, 0.5), 16, |queued| {
+            if Arc::ptr_eq(&queued.listener, &first) {
+                storage.register(section_pos, Arc::clone(&added));
+                visited.push(1);
+            } else if Arc::ptr_eq(&queued.listener, &added) {
+                visited.push(2);
+            }
+        });
+
+        assert_eq!(visited, [1]);
+        let matches = storage.collect_in_range(DVec3::new(0.5, 64.5, 0.5), 16);
+        assert_eq!(matches.len(), 2);
+        assert!(
+            matches
+                .iter()
+                .any(|queued| { Arc::ptr_eq(&queued.listener, &added) })
+        );
+    }
+
+    #[test]
+    fn visit_in_range_allows_listener_to_unregister_itself() {
+        let storage = GameEventListenerStorage::new();
+        let section_pos = SectionPos::from_block_pos(BlockPos::new(0, 64, 0));
+        let listener: SharedGameEventListener = Arc::new(FixedListener {
+            pos: DVec3::new(0.0, 64.0, 0.0),
+            radius: 16,
+        });
+
+        storage.register(section_pos, Arc::clone(&listener));
+
+        let mut visited = 0;
+        storage.visit_in_range(DVec3::new(0.5, 64.5, 0.5), 16, |queued| {
+            if Arc::ptr_eq(&queued.listener, &listener) {
+                assert!(storage.unregister(section_pos, &listener));
+                visited += 1;
+            }
+        });
+
+        assert_eq!(visited, 1);
+        assert!(
+            storage
+                .collect_in_range(DVec3::new(0.5, 64.5, 0.5), 16)
+                .is_empty()
+        );
     }
 }
