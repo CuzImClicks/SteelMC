@@ -12,6 +12,7 @@ use std::{
 
 use crate::chunk::chunk_access::{ChunkAccess, ChunkStatus};
 use crate::world::game_event_context::GameEventContext;
+use crate::world::game_event_listener::{GameEventListenerStorage, SharedGameEventListener};
 use crate::{chunk::chunk_map::ChunkMapGameTickTimings, world::weather::Weather};
 
 use sha2::{Digest, Sha256};
@@ -35,13 +36,13 @@ use steel_registry::game_rules::{GameRuleRef, GameRuleValue};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::level_events;
 use steel_registry::loot_table::LootContext;
-use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_game_rules::{BLOCK_DROPS, RANDOM_TICK_SPEED};
 use steel_registry::{REGISTRY, RegistryEntry, RegistryExt, dimension_type::DimensionTypeRef};
 use steel_registry::{block_entity_type::BlockEntityTypeRef, vanilla_dimension_types};
 use steel_registry::{
     blocks::BlockRef, vanilla_game_rules::ADVANCE_TIME, vanilla_game_rules::ADVANCE_WEATHER,
 };
+use steel_registry::{vanilla_blocks, vanilla_game_events};
 use steel_utils::locks::{SyncMutex, SyncRwLock};
 
 /// Controls how a block position is treated during a raytrace traversal.
@@ -79,6 +80,7 @@ use crate::{
 };
 
 pub mod game_event_context;
+pub mod game_event_listener;
 mod level_reader;
 mod player_area_map;
 mod player_map;
@@ -206,6 +208,8 @@ pub struct World {
     sub_tick_count: AtomicI64,
     /// Point of interest storage for efficient spatial queries of special blocks.
     pub poi_storage: SyncMutex<PointOfInterestStorage>,
+    /// Section-indexed listeners for vanilla game events.
+    game_event_listeners: GameEventListenerStorage,
 }
 
 impl World {
@@ -297,6 +301,7 @@ impl World {
             weather: SyncMutex::new(weather),
             sub_tick_count: AtomicI64::new(0),
             poi_storage: SyncMutex::new(PointOfInterestStorage::new()),
+            game_event_listeners: GameEventListenerStorage::new(),
         }))
     }
 
@@ -1964,9 +1969,16 @@ impl World {
         // Vanilla parity: fluidState.createLegacyBlock() — breaking a waterlogged
         // block leaves water behind instead of air.
         let replacement = fluid_state_to_block(state.get_fluid_state());
-        self.set_block_with_limit(pos, replacement, UpdateFlags::UPDATE_ALL, recursion_left);
-        // TODO: Fire GameEvent.BLOCK_DESTROY
-        true
+        let destroyed =
+            self.set_block_with_limit(pos, replacement, UpdateFlags::UPDATE_ALL, recursion_left);
+        if destroyed {
+            self.game_event(
+                &vanilla_game_events::BLOCK_DESTROY,
+                pos,
+                &GameEventContext::new(None, Some(state)),
+            );
+        }
+        destroyed
     }
 
     /// Drops the loot for a block using its loot table.
@@ -2398,15 +2410,38 @@ impl World {
         }
     }
 
-    /// Dispatches a Game Event to all listeners in range
-    #[expect(unused_variables, clippy::unused_self, reason = "api method")]
-    pub const fn game_event(
+    /// Registers a game event listener in a chunk section.
+    pub fn register_game_event_listener(
+        &self,
+        section_pos: SectionPos,
+        listener: SharedGameEventListener,
+    ) {
+        self.game_event_listeners.register(section_pos, listener);
+    }
+
+    /// Unregisters a game event listener from a chunk section.
+    pub fn unregister_game_event_listener(
+        &self,
+        section_pos: SectionPos,
+        listener: &SharedGameEventListener,
+    ) -> bool {
+        self.game_event_listeners.unregister(section_pos, listener)
+    }
+
+    /// Dispatches a game event to all listeners in range.
+    pub fn game_event(
         self: &Arc<Self>,
         event: GameEventRef,
         pos: BlockPos,
         context: &GameEventContext,
     ) {
-        // TODO: this is just a stub so that people can implement against it
+        let source_pos = DVec3::new(
+            f64::from(pos.x()) + 0.5,
+            f64::from(pos.y()) + 0.5,
+            f64::from(pos.z()) + 0.5,
+        );
+        self.game_event_listeners
+            .dispatch(self, event, source_pos, context);
     }
 }
 

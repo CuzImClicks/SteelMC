@@ -646,6 +646,7 @@ impl Registry {
         vanilla_loot_tables::register_loot_tables(&mut registry.loot_tables);
         vanilla_block_entity_types::register_block_entity_types(&mut registry.block_entity_types);
         vanilla_game_rules::register_game_rules(&mut registry.game_rules);
+        vanilla_game_events::register_game_events(&mut registry.game_events);
 
         vanilla_fluids::register_fluids(&mut registry.fluids);
         vanilla_fluid_tags::register_fluid_tags(&mut registry.fluids);
@@ -710,6 +711,7 @@ impl Registry {
         self.loot_tables.freeze();
         self.block_entity_types.freeze();
         self.game_rules.freeze();
+        self.game_events.freeze();
         self.fluids.freeze();
         self.poi_types.freeze();
         self.enchantments.freeze();
@@ -988,6 +990,27 @@ mod tests {
                 .placed_features
                 .by_key(&Identifier::vanilla_static("ore_diamond"))
                 .is_some()
+        );
+    }
+
+    #[test]
+    fn vanilla_game_events_initialize_in_vanilla_order() {
+        let registry = Registry::new_vanilla();
+        let block_activate = Identifier::vanilla_static("block_activate");
+        let resonate_1 = Identifier::vanilla_static("resonate_1");
+        let resonate_10 = Identifier::vanilla_static("resonate_10");
+
+        assert_eq!(
+            registry.game_events.by_id(0).map(|event| &event.key),
+            Some(&block_activate)
+        );
+        assert_eq!(
+            registry.game_events.by_id(45).map(|event| &event.key),
+            Some(&resonate_1)
+        );
+        assert_eq!(
+            registry.game_events.by_id(54).map(|event| &event.key),
+            Some(&resonate_10)
         );
     }
 }

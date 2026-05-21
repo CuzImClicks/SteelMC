@@ -4,7 +4,6 @@ use steel_utils::BlockStateId;
 use crate::entity::Entity;
 
 /// The context for a game event
-#[expect(dead_code, reason = "stub")]
 #[derive(Clone, Default)]
 pub struct GameEventContext<'a> {
     /// The entity that caused the game event
@@ -24,5 +23,17 @@ impl<'a> GameEventContext<'a> {
             source_entity,
             affected_state,
         }
+    }
+
+    /// Returns the entity that caused the game event.
+    #[must_use]
+    pub fn source_entity(&self) -> Option<&'a dyn Entity> {
+        self.source_entity
+    }
+
+    /// Returns the block state involved in the game event.
+    #[must_use]
+    pub const fn affected_state(&self) -> Option<BlockStateId> {
+        self.affected_state
     }
 }
