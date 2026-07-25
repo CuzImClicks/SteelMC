@@ -2,12 +2,12 @@
 pub use crate::inventory::{
     click::{Click, ClickOutcome, DragKind, MouseButton, QuickCraft, SwapTarget},
     container::{Container, SimpleContainer},
-    equipment::{EntityEquipment, EquipmentSlot, EquipmentSlotType},
+    equipment::{EntityEquipment, EquipmentSlot, EquipmentSlotType, OwnedEntityEquipment},
     lock::{ContainerId, ContainerLockGuard, ContainerRef},
     menu::{
-        ContainerSlots, DataSlot, FillDirection, GridPlacer, Menu, MenuBehavior, MenuBuilder,
-        MenuKind, MenuKindType, PlayerInventorySections, Rect, Region, Section, SectionKind,
-        SectionSource, SlotFactory,
+        ContainerSlots, DataSlot, FakeResultRemainderPolicy, FillDirection, GridPlacer, Menu,
+        MenuBehavior, MenuBuilder, MenuKind, MenuKindType, PlayerInventorySections, Rect, Region,
+        Section, SectionKind, SectionSource, SlotFactory,
     },
     slots::{NormalSlot, RestrictedSlot, ResultHandler, Slot, SlotType},
 };

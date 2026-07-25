@@ -1,11 +1,14 @@
-use std::{mem, range::Range};
+use std::{mem, range::Range, sync::Arc};
 
 use steel_registry::item_stack::ItemStack;
 
 use crate::{
     inventory::{
-        lock::ContainerLockGuard,
-        menu::{behavior::MenuBehavior, builder::Route},
+        lock::{ContainerLockGuard, ContainerRef},
+        menu::{
+            behavior::MenuBehavior,
+            builder::{FakeResultRemainderPolicy, Route},
+        },
         slots::Slot,
     },
     player::Player,
@@ -31,7 +34,11 @@ impl MenuLayout {
             return;
         }
 
-        let mut guard = behavior.lock_all_containers();
+        let mut guard = if return_to_inventory {
+            behavior.lock_all_containers_with(ContainerRef::from(Arc::clone(&player.inventory)))
+        } else {
+            behavior.lock_all_containers()
+        };
         for range in &self.drain_sections {
             for slot_index in *range {
                 let item = mem::take(behavior.slots()[slot_index].get_item_mut(&mut guard));
@@ -97,9 +104,13 @@ impl MenuLayout {
         if let Some(leftover) = slot.on_take(guard, &remaining, player) {
             player.add_item_or_drop_with_guard(guard, leftover);
         }
-        // Output that didn't fit is dropped.
-        if slot.is_fake() && !remaining.is_empty() {
-            let _ = guard.run_unlocked(|| player.drop_item(remaining.clone(), false, true));
+        // Result handlers may replace the fake source in `on_take`; apply the
+        // route's policy to any unresolved output from the old result.
+        if slot.is_fake()
+            && !remaining.is_empty()
+            && route.fake_result_remainder == FakeResultRemainderPolicy::Drop
+        {
+            let _ = guard.run_unlocked(|| player.drop_item(remaining.clone(), false, false));
         }
 
         clicked

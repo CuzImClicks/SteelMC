@@ -5,14 +5,15 @@ use std::{
     f32::consts::TAU,
     mem,
     ops::Range,
-    sync::{Arc, LazyLock, Weak},
+    sync::{Arc, LazyLock},
 };
 
 use glam::DVec3;
 use simdnbt::owned::{NbtList, NbtTag};
 use steel_protocol::packets::game::{
-    CContainerClose, COpenScreen, SContainerButtonClick, SContainerClick, SContainerClose,
-    SContainerSlotStateChanged, SRenameItem, SSetCarriedItem, SSetCreativeModeSlot,
+    CContainerClose, COpenScreen, CSetPlayerInventory, SContainerButtonClick, SContainerClick,
+    SContainerClose, SContainerSlotStateChanged, SRenameItem, SSetCarriedItem,
+    SSetCreativeModeSlot,
 };
 use steel_registry::enchantment_effect::EnchantmentEffectComponent;
 use steel_registry::item_stack::ItemStack;
@@ -45,14 +46,87 @@ pub enum EquipmentSwapResult {
     Fail,
 }
 
+/// Whether a terminal menu removal completed synchronously.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[must_use]
+pub enum MenuRemovalStatus {
+    /// Both the base inventory menu and any external menu were removed.
+    Complete,
+    /// A callback or in-flight open operation owns menu state; removal will
+    /// finish when it unwinds.
+    Pending,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum MenuItemDisposition {
+    ReturnToInventory,
+    Drop,
+}
+
+impl MenuItemDisposition {
+    const fn combine(self, other: Self) -> Self {
+        if matches!(self, Self::Drop) || matches!(other, Self::Drop) {
+            Self::Drop
+        } else {
+            Self::ReturnToInventory
+        }
+    }
+}
+
 pub(super) struct OpenMenuState {
     menu: Option<Menu>,
     dispatch: Option<OpenMenuDispatch>,
+    terminal_removal: Option<TerminalMenuRemoval>,
+    active_open_operations: usize,
+}
+
+pub(super) struct PlayerInventorySyncState {
+    pending_slots: [bool; PlayerInventory::CONTAINER_SIZE],
+}
+
+impl PlayerInventorySyncState {
+    pub(super) const fn new() -> Self {
+        Self {
+            pending_slots: [false; PlayerInventory::CONTAINER_SIZE],
+        }
+    }
+
+    fn request(&mut self, slots: impl IntoIterator<Item = usize>) {
+        for slot in slots {
+            assert!(
+                slot < PlayerInventory::CONTAINER_SIZE,
+                "logical player inventory slot {slot} is out of bounds"
+            );
+            self.pending_slots[slot] = true;
+        }
+    }
+
+    fn take_ready(&mut self, overrides_player_slots: bool) -> Vec<usize> {
+        self.pending_slots
+            .iter_mut()
+            .enumerate()
+            .filter_map(|(slot, pending)| {
+                if !*pending || (overrides_player_slots && slot < PlayerInventory::INVENTORY_SIZE) {
+                    return None;
+                }
+                *pending = false;
+                Some(slot)
+            })
+            .collect()
+    }
 }
 
 struct OpenMenuDispatch {
     container_id: u8,
+    overrides_player_slots: bool,
     actions: Vec<DeferredMenuAction>,
+}
+
+struct TerminalMenuRemoval {
+    disposition: MenuItemDisposition,
+    main_cleanup_complete: bool,
+    pending_cleanup_in_progress: bool,
+    pending_menus: Vec<Menu>,
 }
 
 enum DeferredMenuAction {
@@ -75,25 +149,13 @@ impl OpenMenuState {
         Self {
             menu: None,
             dispatch: None,
+            terminal_removal: None,
+            active_open_operations: 0,
         }
     }
 }
 
-/// Maps inventory slot indices (36+) to equipment slots.
-/// Slots 36-39: Armor (feet, legs, chest, head)
-/// Slot 40: Offhand
-/// Slot 41: Body armor (for animals, not used for players)
-/// Slot 42: Saddle (for animals, not used for players)
-const CONTAINER_EQUIPMENT_SLOTS: [EquipmentSlot; 7] = [
-    EquipmentSlot::Feet,
-    EquipmentSlot::Legs,
-    EquipmentSlot::Chest,
-    EquipmentSlot::Head,
-    EquipmentSlot::OffHand,
-    EquipmentSlot::Body,
-    EquipmentSlot::Saddle,
-];
-
+/// Maps vanilla player-container indices 36-42 to equipment slots.
 pub(crate) const fn slot_to_equipment(slot: usize) -> Option<EquipmentSlot> {
     match slot {
         36 => Some(EquipmentSlot::Feet),
@@ -117,6 +179,19 @@ pub(crate) const fn armor_equipment(index: usize) -> EquipmentSlot {
     slot_to_equipment(index).expect("armor sections only cover armor indices")
 }
 
+const fn equipment_to_slot(slot: EquipmentSlot, selected: u8) -> usize {
+    match slot {
+        EquipmentSlot::MainHand => selected as usize,
+        EquipmentSlot::OffHand => 40,
+        EquipmentSlot::Feet => 36,
+        EquipmentSlot::Legs => 37,
+        EquipmentSlot::Chest => 38,
+        EquipmentSlot::Head => 39,
+        EquipmentSlot::Body => 41,
+        EquipmentSlot::Saddle => 42,
+    }
+}
+
 const fn hand_to_equipment_slot(hand: InteractionHand) -> EquipmentSlot {
     match hand {
         InteractionHand::MainHand => EquipmentSlot::MainHand,
@@ -129,18 +204,18 @@ const fn hand_to_equipment_slot(hand: InteractionHand) -> EquipmentSlot {
 /// Contains 36 main inventory slots (0-8 hotbar, 9-35 main) plus equipment slots
 /// (armor, offhand, etc.) accessed through the Container trait.
 pub struct PlayerInventory {
-    /// The 36 main inventory slots (0-8 hotbar, 9-35 main).
-    items: [ItemStack; Self::INVENTORY_SIZE],
-    /// Entity equipment (armor, hands).
-    equipment: EntityEquipment,
-    /// Whether the selected hotbar item must be synced as main-hand equipment.
-    dirty_main_hand: bool,
-    /// Weak reference to the player.
-    player: Weak<Player>,
+    /// All 43 logical inventory slots in vanilla container order.
+    items: [ItemStack; Self::CONTAINER_SIZE],
     /// Currently selected hotbar slot (0-8).
     selected: u8,
     /// Counter incremented on every change.
     times_changed: u32,
+}
+
+impl Default for PlayerInventory {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 // SAFETY: This key is owned by Steel and uniquely identifies `PlayerInventory`.
@@ -151,6 +226,8 @@ unsafe impl DowncastType for PlayerInventory {
 impl PlayerInventory {
     /// Number of main inventory slots.
     pub const INVENTORY_SIZE: usize = 36;
+    /// Number of logical container slots, including equipment.
+    pub const CONTAINER_SIZE: usize = 43;
     /// Number of hotbar slots.
     pub const SELECTION_SIZE: usize = 9;
     /// Slot index for offhand.
@@ -164,26 +241,12 @@ impl PlayerInventory {
 
     /// Creates a new player inventory with empty slots.
     #[must_use]
-    pub fn new(player: Weak<Player>) -> Self {
+    pub fn new() -> Self {
         Self {
             items: array::from_fn(|_| ItemStack::empty()),
-            equipment: EntityEquipment::new(),
-            dirty_main_hand: false,
-            player,
             selected: 0,
             times_changed: 0,
         }
-    }
-
-    /// Returns a reference to the entity equipment.
-    #[must_use]
-    pub const fn equipment(&self) -> &EntityEquipment {
-        &self.equipment
-    }
-
-    /// Returns a mutable reference to the entity equipment.
-    pub const fn equipment_mut(&mut self) -> &mut EntityEquipment {
-        &mut self.equipment
     }
 
     /// Returns true if the given slot index is a hotbar slot (0-8).
@@ -201,8 +264,7 @@ impl PlayerInventory {
     /// Serializes the main inventory with vanilla's `ItemStackWithSlot` shape.
     #[must_use]
     pub(crate) fn to_vanilla_inventory_nbt(&self) -> NbtList {
-        let items = self
-            .items
+        let items = self.items[..Self::INVENTORY_SIZE]
             .iter()
             .enumerate()
             .filter_map(|(slot, item)| {
@@ -228,8 +290,6 @@ impl PlayerInventory {
         if Self::is_hotbar_slot(slot as usize) {
             if self.selected != slot {
                 self.selected = slot;
-                self.mark_main_hand_dirty();
-                self.refresh_player_equipment_attribute_modifiers(EquipmentSlot::MainHand);
             }
         } else {
             panic!("Invalid hotbar slot: {slot}");
@@ -267,87 +327,48 @@ impl PlayerInventory {
     }
 
     /// Returns the currently selected item (main hand).
-    pub const fn get_selected_item_mut(&mut self) -> &mut ItemStack {
-        self.mark_main_hand_dirty();
-        &mut self.items[self.selected as usize]
+    pub fn get_selected_item_mut(&mut self) -> &mut ItemStack {
+        EntityEquipment::get_mut(self, EquipmentSlot::MainHand)
     }
 
     /// Sets the currently selected item (main hand).
     pub fn set_selected_item(&mut self, item: ItemStack) {
-        let changed = self.items[self.selected as usize] != item;
-        if changed {
-            self.mark_main_hand_dirty();
-        }
-        self.items[self.selected as usize] = item;
-        if changed {
-            self.refresh_player_equipment_attribute_modifiers(EquipmentSlot::MainHand);
-        }
-        self.set_changed();
+        let _ = EntityEquipment::set(self, EquipmentSlot::MainHand, item);
     }
 
     /// Returns the offhand item.
     #[must_use]
-    pub const fn get_offhand_item(&self) -> &ItemStack {
-        self.equipment.get_ref(EquipmentSlot::OffHand)
+    pub fn get_offhand_item(&self) -> &ItemStack {
+        EntityEquipment::get_ref(self, EquipmentSlot::OffHand)
     }
 
     /// Returns a mutable reference to the offhand item.
-    pub const fn get_offhand_item_mut(&mut self) -> &mut ItemStack {
-        self.equipment.get_mut(EquipmentSlot::OffHand)
+    pub fn get_offhand_item_mut(&mut self) -> &mut ItemStack {
+        EntityEquipment::get_mut(self, EquipmentSlot::OffHand)
     }
 
     /// Sets the offhand item.
     pub fn set_offhand_item(&mut self, item: ItemStack) {
-        let old = self.equipment.set(EquipmentSlot::OffHand, item);
-        if old != *self.equipment.get_ref(EquipmentSlot::OffHand) {
-            self.refresh_player_equipment_attribute_modifiers(EquipmentSlot::OffHand);
-        }
-        self.set_changed();
+        let _ = EntityEquipment::set(self, EquipmentSlot::OffHand, item);
     }
 
     /// Executes a function with a mutable reference to the currently selected item.
     pub fn with_selected_item_mut<R>(&mut self, f: impl FnOnce(&mut ItemStack) -> R) -> R {
-        let previous = self.items[self.selected as usize].clone();
-        let result = f(&mut self.items[self.selected as usize]);
-        if self.items[self.selected as usize] != previous {
-            self.mark_main_hand_dirty();
-            self.refresh_player_equipment_attribute_modifiers(EquipmentSlot::MainHand);
+        self.with_equipment_item_mut(EquipmentSlot::MainHand, f)
+    }
+
+    pub(super) fn with_equipment_item_mut<R>(
+        &mut self,
+        slot: EquipmentSlot,
+        f: impl FnOnce(&mut ItemStack) -> R,
+    ) -> R {
+        let inventory_index = self.equipment_slot_index(slot);
+        let previous = self.items[inventory_index].clone();
+        let result = f(&mut self.items[inventory_index]);
+        if !ItemStack::matches(&self.items[inventory_index], &previous) {
+            Container::set_changed(self);
         }
-        self.set_changed();
         result
-    }
-
-    /// Returns non-empty equipment slots for entity tracking spawn sync.
-    #[must_use]
-    pub fn non_empty_equipment_items(&self) -> Vec<(EquipmentSlot, ItemStack)> {
-        let mut items = Vec::new();
-        let main_hand = self.get_selected_item();
-        if !main_hand.is_empty() {
-            items.push((EquipmentSlot::MainHand, main_hand.clone()));
-        }
-        items.extend(
-            self.equipment
-                .non_empty_items()
-                .into_iter()
-                .filter(|(slot, _)| *slot != EquipmentSlot::MainHand),
-        );
-        items
-    }
-
-    /// Drains equipment slots that changed since the last entity tracking sync.
-    pub fn drain_dirty_equipment_items(&mut self) -> Vec<(EquipmentSlot, ItemStack)> {
-        let mut items = Vec::new();
-        if self.dirty_main_hand {
-            self.dirty_main_hand = false;
-            items.push((EquipmentSlot::MainHand, self.get_selected_item().clone()));
-        }
-        items.extend(
-            self.equipment
-                .drain_dirty_items()
-                .into_iter()
-                .filter(|(slot, _)| *slot != EquipmentSlot::MainHand),
-        );
-        items
     }
 
     /// Returns the number of times this inventory has been modified.
@@ -358,14 +379,17 @@ impl PlayerInventory {
 
     /// Returns the non-equipment items (main 36 slots).
     #[must_use]
-    pub const fn get_items(&self) -> &[ItemStack; Self::INVENTORY_SIZE] {
-        &self.items
+    pub fn get_items(&self) -> &[ItemStack; Self::INVENTORY_SIZE] {
+        let Some(items) = self.items.first_chunk::<{ Self::INVENTORY_SIZE }>() else {
+            unreachable!("the player inventory always contains its 36 main slots");
+        };
+        items
     }
 
     /// Finds the first empty slot in the inventory, or -1 if full.
     #[must_use]
     pub fn get_free_slot(&self) -> i32 {
-        for i in 0..self.items.len() {
+        for i in 0..Self::INVENTORY_SIZE {
             if self.items[i].is_empty() {
                 return i as i32;
             }
@@ -377,7 +401,7 @@ impl PlayerInventory {
     /// Returns -1 if not found.
     #[must_use]
     pub fn find_slot_matching_item(&self, stack: &ItemStack) -> i32 {
-        for i in 0..self.items.len() {
+        for i in 0..Self::INVENTORY_SIZE {
             if !self.items[i].is_empty() && ItemStack::is_same_item(&self.items[i], stack) {
                 return i as i32;
             }
@@ -389,17 +413,11 @@ impl PlayerInventory {
     /// Used for pick block when item is in main inventory but not hotbar.
     pub fn pick_slot(&mut self, slot: i32) {
         let slot = slot as usize;
-        if slot >= self.items.len() {
+        if slot >= Self::INVENTORY_SIZE {
             return;
         }
         let selected = self.selected as usize;
-        if selected != slot {
-            self.mark_main_hand_dirty();
-        }
         self.items.swap(selected, slot);
-        if selected != slot {
-            self.refresh_player_equipment_attribute_modifiers(EquipmentSlot::MainHand);
-        }
         self.set_changed();
     }
 
@@ -411,23 +429,19 @@ impl PlayerInventory {
             if self.items[i].is_empty() {
                 self.items[i] = stack;
                 self.selected = i as u8;
-                self.mark_main_hand_dirty();
-                self.refresh_player_equipment_attribute_modifiers(EquipmentSlot::MainHand);
                 self.set_changed();
                 return true;
             }
         }
         // No empty slot, replace current slot
         self.items[self.selected as usize] = stack;
-        self.mark_main_hand_dirty();
-        self.refresh_player_equipment_attribute_modifiers(EquipmentSlot::MainHand);
         self.set_changed();
         true
     }
 
     /// Gets the item in the specified hand.
     #[must_use]
-    pub const fn get_item_in_hand(&self, hand: InteractionHand) -> &ItemStack {
+    pub fn get_item_in_hand(&self, hand: InteractionHand) -> &ItemStack {
         match hand {
             InteractionHand::MainHand => self.get_selected_item(),
             InteractionHand::OffHand => self.get_offhand_item(),
@@ -436,7 +450,7 @@ impl PlayerInventory {
 
     /// Gets the item in the specified hand.
     #[must_use]
-    pub const fn get_item_in_hand_mut(&mut self, hand: InteractionHand) -> &mut ItemStack {
+    pub fn get_item_in_hand_mut(&mut self, hand: InteractionHand) -> &mut ItemStack {
         match hand {
             InteractionHand::MainHand => self.get_selected_item_mut(),
             InteractionHand::OffHand => self.get_offhand_item_mut(),
@@ -458,11 +472,6 @@ impl PlayerInventory {
         }
 
         self.get_item_in_hand_mut(hand).shrink(amount);
-        let slot = match hand {
-            InteractionHand::MainHand => EquipmentSlot::MainHand,
-            InteractionHand::OffHand => EquipmentSlot::OffHand,
-        };
-        self.refresh_player_equipment_attribute_modifiers(slot);
         self.set_changed();
     }
 
@@ -473,8 +482,6 @@ impl PlayerInventory {
         }
 
         let result = self.get_item_in_hand_mut(hand).split(amount);
-        let slot = hand_to_equipment_slot(hand);
-        self.refresh_player_equipment_attribute_modifiers(slot);
         self.set_changed();
         result
     }
@@ -490,7 +497,6 @@ impl PlayerInventory {
             return;
         }
 
-        let slot = hand_to_equipment_slot(hand);
         let changed = {
             let item = self.get_item_in_hand_mut(hand);
             let previous_item = item.item();
@@ -505,7 +511,6 @@ impl PlayerInventory {
         };
 
         if changed {
-            self.refresh_player_equipment_attribute_modifiers(slot);
             self.set_changed();
         }
     }
@@ -516,23 +521,7 @@ impl PlayerInventory {
         hand: InteractionHand,
         f: impl FnOnce(&mut ItemStack) -> R,
     ) -> R {
-        let slot = hand_to_equipment_slot(hand);
-        let previous_item = self.get_item_in_hand(hand).item();
-        let previous_count = self.get_item_in_hand(hand).count();
-        let previous_damage = self.get_item_in_hand(hand).get_damage_value();
-
-        let result = f(self.get_item_in_hand_mut(hand));
-
-        let item = self.get_item_in_hand(hand);
-        let changed = item.item() != previous_item
-            || item.count() != previous_count
-            || item.get_damage_value() != previous_damage;
-        if changed {
-            self.refresh_player_equipment_attribute_modifiers(slot);
-            self.set_changed();
-        }
-
-        result
+        self.with_equipment_item_mut(hand_to_equipment_slot(hand), f)
     }
 
     /// Damages the held item and converts it to `replacement_item` if it breaks.
@@ -549,7 +538,6 @@ impl PlayerInventory {
             return;
         }
 
-        let slot = hand_to_equipment_slot(hand);
         let changed = {
             let item = self.get_item_in_hand_mut(hand);
             let previous_item = item.item();
@@ -570,7 +558,6 @@ impl PlayerInventory {
         };
 
         if changed {
-            self.refresh_player_equipment_attribute_modifiers(slot);
             self.set_changed();
         }
     }
@@ -583,10 +570,10 @@ impl PlayerInventory {
             return false;
         }
 
-        let main_hand = self.take_equipment_slot_item(EquipmentSlot::MainHand);
-        let offhand = self.take_equipment_slot_item(EquipmentSlot::OffHand);
-        self.set_equipment_slot_item(EquipmentSlot::MainHand, offhand);
-        self.set_equipment_slot_item(EquipmentSlot::OffHand, main_hand);
+        let main_hand = EntityEquipment::take(self, EquipmentSlot::MainHand);
+        let offhand = EntityEquipment::take(self, EquipmentSlot::OffHand);
+        let _ = EntityEquipment::set(self, EquipmentSlot::MainHand, offhand);
+        let _ = EntityEquipment::set(self, EquipmentSlot::OffHand, main_hand);
         true
     }
 
@@ -602,7 +589,7 @@ impl PlayerInventory {
             return EquipmentSwapResult::Fail;
         }
 
-        let in_equipment_slot = self.get_equipment_slot_item(slot);
+        let in_equipment_slot = EntityEquipment::get_ref(self, slot);
         if ItemStack::is_same_item_same_components(in_hand, in_equipment_slot) {
             return EquipmentSwapResult::Fail;
         }
@@ -623,7 +610,7 @@ impl PlayerInventory {
         if !has_infinite_materials {
             self.get_item_in_hand_mut(hand).shrink(1);
         }
-        let mut overflow = self.set_equipment_slot_item(slot, to_equip);
+        let mut overflow = EntityEquipment::set(self, slot, to_equip);
         if !overflow.is_empty() && self.add(&mut overflow) {
             overflow = ItemStack::empty();
         }
@@ -643,7 +630,7 @@ impl PlayerInventory {
 
             let selected = rand::random_range(0..candidates.len());
             let slot = candidates[selected];
-            let item = self.get_equipment_slot_item_mut(slot);
+            let item = EntityEquipment::get_mut(self, slot);
             let to_repair = item
                 .apply_unconditional_enchantment_value_effects(
                     EnchantmentEffectComponent::RepairWithXp,
@@ -680,7 +667,7 @@ impl PlayerInventory {
             let held = self
                 .get_item_in_hand(hand)
                 .copy_with_count(self.get_item_in_hand(hand).count());
-            let previous = self.set_equipment_slot_item(slot, held);
+            let previous = EntityEquipment::set(self, slot, held);
             if !previous.is_empty() {
                 self.set_item_in_hand(hand, previous);
             }
@@ -688,31 +675,14 @@ impl PlayerInventory {
         }
 
         let held = self.take_item_in_hand(hand);
-        let previous = self.set_equipment_slot_item(slot, held);
+        let previous = EntityEquipment::set(self, slot, held);
         self.set_item_in_hand(hand, previous);
-    }
-
-    const fn get_equipment_slot_item(&self, slot: EquipmentSlot) -> &ItemStack {
-        match slot {
-            EquipmentSlot::MainHand => self.get_selected_item(),
-            _ => self.equipment.get_ref(slot),
-        }
-    }
-
-    const fn get_equipment_slot_item_mut(&mut self, slot: EquipmentSlot) -> &mut ItemStack {
-        match slot {
-            EquipmentSlot::MainHand => {
-                self.mark_main_hand_dirty();
-                &mut self.items[self.selected as usize]
-            }
-            _ => self.equipment.get_mut(slot),
-        }
     }
 
     fn repair_with_xp_candidate_slots(&self) -> Vec<EquipmentSlot> {
         let mut slots = Vec::new();
         for slot in EquipmentSlot::ALL {
-            let item = self.get_equipment_slot_item(slot);
+            let item = EntityEquipment::get_ref(self, slot);
             if !item.is_damaged() {
                 continue;
             }
@@ -739,65 +709,11 @@ impl PlayerInventory {
         slots
     }
 
-    fn refresh_player_equipment_attribute_modifiers(&self, slot: EquipmentSlot) {
-        let Some(player) = self.player.upgrade() else {
-            return;
-        };
-        player.refresh_equipment_attribute_modifiers_from_stack(
-            slot,
-            self.get_equipment_slot_item(slot),
-        );
-    }
-
-    fn set_equipment_slot_item(&mut self, slot: EquipmentSlot, item: ItemStack) -> ItemStack {
-        if slot == EquipmentSlot::MainHand {
-            return self.set_selected_equipment_item(item);
-        }
-
-        let old = self.equipment.set(slot, item);
-        if old != *self.equipment.get_ref(slot) {
-            self.refresh_player_equipment_attribute_modifiers(slot);
-        }
-        self.set_changed();
-        old
-    }
-
-    fn set_selected_equipment_item(&mut self, item: ItemStack) -> ItemStack {
-        let selected = self.selected as usize;
-        let old = mem::replace(&mut self.items[selected], item);
-        if old != self.items[selected] {
-            self.mark_main_hand_dirty();
-            self.refresh_player_equipment_attribute_modifiers(EquipmentSlot::MainHand);
-        }
-        self.set_changed();
-        old
-    }
-
     fn take_item_in_hand(&mut self, hand: InteractionHand) -> ItemStack {
         match hand {
-            InteractionHand::MainHand => self.take_equipment_slot_item(EquipmentSlot::MainHand),
-            InteractionHand::OffHand => self.take_equipment_slot_item(EquipmentSlot::OffHand),
+            InteractionHand::MainHand => EntityEquipment::take(self, EquipmentSlot::MainHand),
+            InteractionHand::OffHand => EntityEquipment::take(self, EquipmentSlot::OffHand),
         }
-    }
-
-    fn take_equipment_slot_item(&mut self, slot: EquipmentSlot) -> ItemStack {
-        if slot == EquipmentSlot::MainHand {
-            let selected = self.selected as usize;
-            let old = mem::take(&mut self.items[selected]);
-            if !old.is_empty() {
-                self.mark_main_hand_dirty();
-                self.refresh_player_equipment_attribute_modifiers(EquipmentSlot::MainHand);
-                self.set_changed();
-            }
-            return old;
-        }
-
-        let old = self.equipment.take(slot);
-        if !old.is_empty() {
-            self.refresh_player_equipment_attribute_modifiers(slot);
-            self.set_changed();
-        }
-        old
     }
 }
 
@@ -820,11 +736,13 @@ impl Player {
         }
 
         let container_id = menu.container_id();
+        let overrides_player_slots = menu.overrides_player_slots();
         let Some(menu) = open_menu.menu.take() else {
             return Err(OpenMenuUnavailable::Unavailable);
         };
         open_menu.dispatch = Some(OpenMenuDispatch {
             container_id,
+            overrides_player_slots,
             actions: Vec::new(),
         });
         Ok(menu)
@@ -837,7 +755,14 @@ impl Player {
                 open_menu.menu = Some(menu);
                 return;
             };
+            if let Some(terminal_removal) = open_menu.terminal_removal.as_mut() {
+                Self::queue_deferred_menus(terminal_removal, dispatch.actions);
+                drop(open_menu);
+                self.finish_terminal_menu_main_cleanup(Some(menu));
+                return;
+            }
             open_menu.menu = Some(menu);
+            open_menu.active_open_operations += 1;
             dispatch.actions
         };
 
@@ -850,6 +775,13 @@ impl Player {
             let Some(dispatch) = open_menu.dispatch.take() else {
                 return;
             };
+            if let Some(terminal_removal) = open_menu.terminal_removal.as_mut() {
+                Self::queue_deferred_menus(terminal_removal, dispatch.actions);
+                drop(open_menu);
+                self.finish_terminal_menu_main_cleanup(None);
+                return;
+            }
+            open_menu.active_open_operations += 1;
             dispatch.actions
         };
 
@@ -872,6 +804,38 @@ impl Player {
                 }
             }
         }
+
+        self.finish_menu_open_operation();
+    }
+
+    fn queue_deferred_menus(
+        terminal_removal: &mut TerminalMenuRemoval,
+        actions: Vec<DeferredMenuAction>,
+    ) {
+        terminal_removal
+            .pending_menus
+            .extend(actions.into_iter().filter_map(|action| match action {
+                DeferredMenuAction::Open(prepared) => Some(prepared.menu),
+                DeferredMenuAction::Close { .. } => None,
+            }));
+    }
+
+    fn begin_menu_open_operation(&self) -> bool {
+        let mut open_menu = self.open_menu.lock();
+        if open_menu.terminal_removal.is_some() {
+            return false;
+        }
+        open_menu.active_open_operations += 1;
+        true
+    }
+
+    fn finish_menu_open_operation(&self) {
+        {
+            let mut open_menu = self.open_menu.lock();
+            debug_assert!(open_menu.active_open_operations > 0);
+            open_menu.active_open_operations -= 1;
+        }
+        self.try_finish_terminal_menu_removal();
     }
 
     /// Attempts to pick up nearby item entities.
@@ -1090,6 +1054,9 @@ impl Player {
                     slot.set_by_player(&mut guard, item_stack.clone(), &previous);
                 }
             }
+            if (1..=4).contains(&slot_index) {
+                menu.update_crafting_result();
+            }
             menu.behavior_mut()
                 .set_remote_slot_known(slot_index, &item_stack);
             menu.behavior_mut().broadcast_changes(&self.connection);
@@ -1157,13 +1124,36 @@ impl Player {
         title: impl Into<TextComponent>,
         create: impl FnOnce(u8, &Arc<World>) -> Menu,
     ) {
+        if !self.begin_menu_open_operation() {
+            return;
+        }
+        self.open_menu_inner(title, create);
+        self.finish_menu_open_operation();
+    }
+
+    fn open_menu_inner(
+        &self,
+        title: impl Into<TextComponent>,
+        create: impl FnOnce(u8, &Arc<World>) -> Menu,
+    ) {
         self.do_close_container();
+
+        {
+            let open_menu = self.open_menu.lock();
+            if open_menu.terminal_removal.is_some() {
+                return;
+            }
+        }
 
         let container_id = self.next_container_counter();
         let menu = create(container_id, &self.get_world());
         let title = title.into();
 
         let mut open_menu = self.open_menu.lock();
+        if let Some(terminal_removal) = open_menu.terminal_removal.as_mut() {
+            terminal_removal.pending_menus.push(menu);
+            return;
+        }
         if let Some(dispatch) = open_menu.dispatch.as_mut() {
             dispatch
                 .actions
@@ -1180,11 +1170,23 @@ impl Player {
 
     fn open_prepared_menu(&self, title: TextComponent, mut menu: Menu) {
         loop {
+            {
+                let mut open_menu = self.open_menu.lock();
+                if let Some(terminal_removal) = open_menu.terminal_removal.as_mut() {
+                    terminal_removal.pending_menus.push(menu);
+                    return;
+                }
+            }
+
             // A removal hook may have opened another menu while the initiating
             // open call was closing its predecessor.
             self.do_close_container();
 
             let mut open_menu = self.open_menu.lock();
+            if let Some(terminal_removal) = open_menu.terminal_removal.as_mut() {
+                terminal_removal.pending_menus.push(menu);
+                return;
+            }
             if let Some(dispatch) = open_menu.dispatch.as_mut() {
                 dispatch
                     .actions
@@ -1199,6 +1201,7 @@ impl Player {
             }
             open_menu.dispatch = Some(OpenMenuDispatch {
                 container_id: menu.container_id(),
+                overrides_player_slots: menu.overrides_player_slots(),
                 actions: Vec::new(),
             });
             break;
@@ -1258,9 +1261,112 @@ impl Player {
         self.close_open_menu(false);
     }
 
+    /// Removes both the base inventory menu and any external menu.
+    ///
+    /// This mirrors `Player::remove`: base crafting and carried items are
+    /// handled before the external menu, and menu hooks cannot install a
+    /// replacement while removal is in progress. The inventory menu remains
+    /// reusable because Steel keeps one `Player` across world changes.
+    pub fn remove_all_menus(&self) -> MenuRemovalStatus {
+        self.remove_all_menus_with_disposition(self.default_menu_item_disposition())
+    }
+
+    pub(super) fn remove_all_menus_with_disposition(
+        &self,
+        disposition: MenuItemDisposition,
+    ) -> MenuRemovalStatus {
+        let menu = {
+            let mut open_menu = self.open_menu.lock();
+            if let Some(terminal_removal) = open_menu.terminal_removal.as_mut() {
+                terminal_removal.disposition = terminal_removal.disposition.combine(disposition);
+                return MenuRemovalStatus::Pending;
+            }
+
+            open_menu.terminal_removal = Some(TerminalMenuRemoval {
+                disposition,
+                main_cleanup_complete: false,
+                pending_cleanup_in_progress: false,
+                pending_menus: Vec::new(),
+            });
+            if open_menu.dispatch.is_some() {
+                return MenuRemovalStatus::Pending;
+            }
+
+            open_menu.menu.take()
+        };
+
+        self.finish_terminal_menu_main_cleanup(menu);
+        if self.open_menu.lock().terminal_removal.is_none() {
+            MenuRemovalStatus::Complete
+        } else {
+            MenuRemovalStatus::Pending
+        }
+    }
+
+    fn finish_terminal_menu_main_cleanup(&self, mut menu: Option<Menu>) {
+        self.inventory_menu.lock().removed(self);
+        if let Some(menu) = menu.as_mut() {
+            self.remove_open_menu(menu);
+        }
+
+        {
+            let mut open_menu = self.open_menu.lock();
+            let Some(terminal_removal) = open_menu.terminal_removal.as_mut() else {
+                return;
+            };
+            terminal_removal.main_cleanup_complete = true;
+        }
+        self.try_finish_terminal_menu_removal();
+    }
+
+    fn try_finish_terminal_menu_removal(&self) {
+        loop {
+            let pending_menus = {
+                let mut open_menu = self.open_menu.lock();
+                if open_menu.active_open_operations != 0 {
+                    return;
+                }
+                let Some(terminal_removal) = open_menu.terminal_removal.as_mut() else {
+                    return;
+                };
+                if !terminal_removal.main_cleanup_complete {
+                    return;
+                }
+                if terminal_removal.pending_cleanup_in_progress {
+                    return;
+                }
+                if terminal_removal.pending_menus.is_empty() {
+                    open_menu.terminal_removal = None;
+                    debug_assert!(open_menu.menu.is_none());
+                    return;
+                }
+                terminal_removal.pending_cleanup_in_progress = true;
+                mem::take(&mut terminal_removal.pending_menus)
+            };
+
+            for mut pending_menu in pending_menus {
+                pending_menu.removed(self);
+            }
+
+            let mut open_menu = self.open_menu.lock();
+            let Some(terminal_removal) = open_menu.terminal_removal.as_mut() else {
+                return;
+            };
+            terminal_removal.pending_cleanup_in_progress = false;
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn retry_terminal_menu_removal_for_test(&self) {
+        self.try_finish_terminal_menu_removal();
+    }
+
     fn close_open_menu(&self, send_packet: bool) {
         let menu = {
             let mut open_menu = self.open_menu.lock();
+            if open_menu.terminal_removal.is_some() {
+                return;
+            }
             if let Some(dispatch) = open_menu.dispatch.as_mut() {
                 dispatch
                     .actions
@@ -1272,6 +1378,7 @@ impl Player {
             };
             open_menu.dispatch = Some(OpenMenuDispatch {
                 container_id: menu.container_id(),
+                overrides_player_slots: menu.overrides_player_slots(),
                 actions: Vec::new(),
             });
             menu
@@ -1288,11 +1395,16 @@ impl Player {
     }
 
     fn remove_open_menu(&self, menu: &mut Menu) {
+        let overrides_player_slots = menu.overrides_player_slots();
         menu.removed(self);
-        self.inventory_menu
-            .lock()
-            .behavior_mut()
-            .transfer_state(menu.behavior());
+        if overrides_player_slots {
+            self.request_inventory_resync(0..PlayerInventory::INVENTORY_SIZE);
+        } else {
+            self.inventory_menu
+                .lock()
+                .behavior_mut()
+                .transfer_state(menu.behavior());
+        }
     }
 
     /// Returns true if the player has an external menu open (not the inventory).
@@ -1333,6 +1445,47 @@ impl Player {
                 .lock()
                 .behavior_mut()
                 .broadcast_changes(&self.connection);
+        }
+    }
+
+    /// Requests direct synchronization of logical player-inventory slots.
+    pub(crate) fn request_inventory_resync(&self, slots: impl IntoIterator<Item = usize>) {
+        self.inventory_sync.lock().request(slots);
+    }
+
+    /// Sends the latest values for requested logical inventory slots.
+    pub(super) fn flush_inventory_resync(&self) {
+        let overrides_player_slots = {
+            let open_menu = self.open_menu.lock();
+            open_menu
+                .menu
+                .as_ref()
+                .is_some_and(Menu::overrides_player_slots)
+                || open_menu
+                    .dispatch
+                    .as_ref()
+                    .is_some_and(|dispatch| dispatch.overrides_player_slots)
+        };
+        let slots = self
+            .inventory_sync
+            .lock()
+            .take_ready(overrides_player_slots);
+        if slots.is_empty() {
+            return;
+        }
+
+        let packets = {
+            let inventory = self.inventory.lock();
+            slots
+                .into_iter()
+                .map(|slot| CSetPlayerInventory {
+                    slot: slot as i32,
+                    item_stack: inventory.get_item(slot).clone(),
+                })
+                .collect::<Vec<_>>()
+        };
+        for packet in packets {
+            self.send_packet(packet);
         }
     }
 
@@ -1404,15 +1557,14 @@ impl Player {
 
         let removed = {
             let mut inventory = self.inventory.lock();
-            let selected = inventory.get_selected_item_mut();
-            if selected.is_empty() {
+            let selected_count = inventory.get_selected_item().count();
+            if selected_count == 0 {
                 return;
             }
-            if all {
-                selected.split(selected.count())
-            } else {
-                selected.split(1)
-            }
+            inventory.split_item_in_hand(
+                InteractionHand::MainHand,
+                if all { selected_count } else { 1 },
+            )
         };
 
         let _ = self.drop_item(removed, false, true);
@@ -1501,9 +1653,27 @@ impl Player {
     /// drops the items.
     #[must_use]
     pub fn returns_menu_items_to_inventory(&self) -> bool {
+        if let Some(disposition) = self
+            .open_menu
+            .lock()
+            .terminal_removal
+            .as_ref()
+            .map(|terminal_removal| terminal_removal.disposition)
+        {
+            return disposition == MenuItemDisposition::ReturnToInventory;
+        }
+
+        self.default_menu_item_disposition() == MenuItemDisposition::ReturnToInventory
+    }
+
+    fn default_menu_item_disposition(&self) -> MenuItemDisposition {
         let removed_outside_world_change =
             self.is_removed() && self.removal_reason() != Some(RemovalReason::ChangedWorld);
-        !removed_outside_world_change && !self.connection.closed()
+        if removed_outside_world_change || self.connection.closed() {
+            MenuItemDisposition::Drop
+        } else {
+            MenuItemDisposition::ReturnToInventory
+        }
     }
 
     /// Tries to add an item to the player's inventory, dropping it if it doesn't fit.
@@ -1588,19 +1758,66 @@ static EMPTY_ITEM: LazyLock<ItemStack> = LazyLock::new(ItemStack::empty);
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InvalidHotbarSlot;
 
+impl PlayerInventory {
+    const fn equipment_slot_index(&self, slot: EquipmentSlot) -> usize {
+        equipment_to_slot(slot, self.selected)
+    }
+}
+
+impl EntityEquipment for PlayerInventory {
+    fn get_ref(&self, slot: EquipmentSlot) -> &ItemStack {
+        &self.items[self.equipment_slot_index(slot)]
+    }
+
+    fn get_mut(&mut self, slot: EquipmentSlot) -> &mut ItemStack {
+        let inventory_index = self.equipment_slot_index(slot);
+        &mut self.items[inventory_index]
+    }
+
+    fn set(&mut self, slot: EquipmentSlot, stack: ItemStack) -> ItemStack {
+        let inventory_index = self.equipment_slot_index(slot);
+        let old = mem::replace(&mut self.items[inventory_index], stack);
+        Container::set_changed(self);
+        old
+    }
+
+    fn take(&mut self, slot: EquipmentSlot) -> ItemStack {
+        let inventory_index = self.equipment_slot_index(slot);
+        let old = mem::take(&mut self.items[inventory_index]);
+        if !old.is_empty() {
+            Container::set_changed(self);
+        }
+        old
+    }
+
+    fn clear(&mut self) {
+        let mut changed = false;
+        for slot in EquipmentSlot::ALL {
+            let inventory_index = self.equipment_slot_index(slot);
+            if self.items[inventory_index].is_empty() {
+                continue;
+            }
+
+            self.items[inventory_index] = ItemStack::empty();
+            changed = true;
+        }
+        if changed {
+            Container::set_changed(self);
+        }
+    }
+}
+
 impl Container for PlayerInventory {
-    /// WARNING: This only returns the items in the main inventory, not those in the equipment slots
     fn items(&self) -> &[ItemStack] {
         &self.items
     }
 
-    /// WARNING: This only returns the items in the main inventory, not those in the equipment slots
     fn items_mut(&mut self) -> &mut [ItemStack] {
         &mut self.items
     }
 
     fn get_container_size(&self) -> usize {
-        Self::INVENTORY_SIZE + CONTAINER_EQUIPMENT_SLOTS.len()
+        Self::CONTAINER_SIZE
     }
 
     /// Adds an item to the player's main inventory (slots 0-35 only).
@@ -1616,9 +1833,11 @@ impl Container for PlayerInventory {
         let max_size = self.get_max_stack_size_for_item(stack);
         let mut changed = false;
 
-        // First pass: try to stack with existing items in main inventory only
+        // Vanilla prioritizes the selected slot, then an existing compatible
+        // offhand stack, before scanning the remaining main inventory.
         if stack.is_stackable() {
-            for slot in 0..Self::INVENTORY_SIZE {
+            let selected = self.selected as usize;
+            for slot in [selected, Self::SLOT_OFFHAND] {
                 if stack.is_empty() {
                     if changed {
                         self.set_changed();
@@ -1633,9 +1852,29 @@ impl Container for PlayerInventory {
                         let to_add = stack.count().min(space);
                         existing.grow(to_add);
                         stack.shrink(to_add);
-                        if slot == self.selected as usize {
-                            self.mark_main_hand_dirty();
-                        }
+                        changed = true;
+                    }
+                }
+            }
+
+            for slot in 0..Self::INVENTORY_SIZE {
+                if stack.is_empty() {
+                    if changed {
+                        self.set_changed();
+                    }
+                    return true;
+                }
+                if slot == selected {
+                    continue;
+                }
+                let existing = &mut self.items[slot];
+                if !existing.is_empty() && ItemStack::is_same_item_same_components(existing, stack)
+                {
+                    let space = max_size - existing.count();
+                    if space > 0 {
+                        let to_add = stack.count().min(space);
+                        existing.grow(to_add);
+                        stack.shrink(to_add);
                         changed = true;
                     }
                 }
@@ -1653,10 +1892,6 @@ impl Container for PlayerInventory {
             if self.items[slot].is_empty() {
                 let to_place = stack.count().min(max_size);
                 self.items[slot] = stack.split(to_place);
-                if slot == self.selected as usize {
-                    self.mark_main_hand_dirty();
-                    self.refresh_player_equipment_attribute_modifiers(EquipmentSlot::MainHand);
-                }
                 changed = true;
             }
         }
@@ -1668,61 +1903,35 @@ impl Container for PlayerInventory {
     }
 
     fn get_item(&self, slot: usize) -> &ItemStack {
-        if slot < Self::INVENTORY_SIZE {
+        if slot < Self::CONTAINER_SIZE {
             &self.items[slot]
-        } else if let Some(eq_slot) = slot_to_equipment(slot) {
-            self.equipment.get_ref(eq_slot)
         } else {
             &EMPTY_ITEM
         }
     }
 
     fn get_item_mut(&mut self, slot: usize) -> &mut ItemStack {
-        if slot < Self::INVENTORY_SIZE {
-            if slot == self.selected as usize {
-                self.mark_main_hand_dirty();
-            }
-            &mut self.items[slot]
-        } else if let Some(eq_slot) = slot_to_equipment(slot) {
-            self.equipment.get_mut(eq_slot)
-        } else {
-            panic!("Invalid slot index: {slot}");
-        }
+        assert!(slot < Self::CONTAINER_SIZE, "Invalid slot index: {slot}");
+        &mut self.items[slot]
     }
 
     fn set_item(&mut self, slot: usize, stack: ItemStack) {
+        if slot == self.selected as usize {
+            let _ = EntityEquipment::set(self, EquipmentSlot::MainHand, stack);
+            return;
+        }
+        if let Some(equipment_slot) = slot_to_equipment(slot) {
+            let _ = EntityEquipment::set(self, equipment_slot, stack);
+            return;
+        }
         if slot < Self::INVENTORY_SIZE {
-            let refresh_main_hand = slot == self.selected as usize && self.items[slot] != stack;
-            if refresh_main_hand {
-                self.mark_main_hand_dirty();
-            }
             self.items[slot] = stack;
-            if refresh_main_hand {
-                self.refresh_player_equipment_attribute_modifiers(EquipmentSlot::MainHand);
-            }
-        } else if let Some(eq_slot) = slot_to_equipment(slot) {
-            let old = self.equipment.set(eq_slot, stack);
-            if old != *self.equipment.get_ref(eq_slot) {
-                self.refresh_player_equipment_attribute_modifiers(eq_slot);
-            }
         }
         self.set_changed();
     }
 
     fn is_empty(&self) -> bool {
-        for item in &self.items {
-            if !item.is_empty() {
-                return false;
-            }
-        }
-
-        for slot in CONTAINER_EQUIPMENT_SLOTS {
-            if !self.equipment.get_ref(slot).is_empty() {
-                return false;
-            }
-        }
-
-        true
+        self.items.iter().all(ItemStack::is_empty)
     }
 
     fn set_changed(&mut self) {
@@ -1731,21 +1940,9 @@ impl Container for PlayerInventory {
 
     fn clear_content(&mut self) -> i32 {
         let mut count = 0;
-        let selected = self.selected as usize;
-        if !self.items[selected].is_empty() {
-            self.mark_main_hand_dirty();
-        }
         for item in &mut self.items {
             count += item.count();
             *item = ItemStack::empty();
-        }
-        for slot in CONTAINER_EQUIPMENT_SLOTS {
-            count += self.equipment.get_ref(slot).count();
-        }
-        self.equipment.clear();
-        self.refresh_player_equipment_attribute_modifiers(EquipmentSlot::MainHand);
-        for slot in CONTAINER_EQUIPMENT_SLOTS {
-            self.refresh_player_equipment_attribute_modifiers(slot);
         }
         if count > 0 {
             self.set_changed();
@@ -1755,33 +1952,10 @@ impl Container for PlayerInventory {
 
     fn clear_content_matching(&mut self, predicate: &mut dyn FnMut(&mut ItemStack) -> bool) -> i32 {
         let mut count = 0;
-        let selected = self.selected as usize;
-        let mut main_hand_changed = false;
-        let mut equipment_changed = [false; 8];
-        for slot in 0..Self::INVENTORY_SIZE {
-            if predicate(&mut self.items[slot]) {
-                if slot == selected {
-                    self.mark_main_hand_dirty();
-                    main_hand_changed = true;
-                }
-                count += self.items[slot].count();
-                self.items[slot] = ItemStack::empty();
-            }
-        }
-        for slot in CONTAINER_EQUIPMENT_SLOTS {
-            let item = self.equipment.get_mut(slot);
+        for item in &mut self.items {
             if predicate(item) {
                 count += item.count();
                 *item = ItemStack::empty();
-                equipment_changed[slot.index()] = true;
-            }
-        }
-        if main_hand_changed {
-            self.refresh_player_equipment_attribute_modifiers(EquipmentSlot::MainHand);
-        }
-        for slot in CONTAINER_EQUIPMENT_SLOTS {
-            if equipment_changed[slot.index()] {
-                self.refresh_player_equipment_attribute_modifiers(slot);
             }
         }
         if count > 0 {
@@ -1789,34 +1963,11 @@ impl Container for PlayerInventory {
         }
         count
     }
-
-    fn iter(&self) -> Box<dyn Iterator<Item = &ItemStack> + '_> {
-        let equipment = CONTAINER_EQUIPMENT_SLOTS.map(|slot| self.equipment.get_ref(slot));
-        Box::new(self.items.iter().chain(equipment))
-    }
-
-    fn iter_mut(&mut self) -> Box<dyn Iterator<Item = &mut ItemStack> + '_> {
-        let Self {
-            items, equipment, ..
-        } = self;
-        let [_, offhand, feet, legs, chest, head, body, saddle] = equipment.slots_mut();
-        Box::new(
-            items
-                .iter_mut()
-                .chain([feet, legs, chest, head, offhand, body, saddle]),
-        )
-    }
-}
-
-impl PlayerInventory {
-    const fn mark_main_hand_dirty(&mut self) {
-        self.dirty_main_hand = true;
-    }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Weak;
+    use std::ptr;
 
     use steel_registry::test_support::init_test_registry;
     use steel_registry::vanilla_items;
@@ -1827,9 +1978,9 @@ mod tests {
     #[test]
     fn vanilla_inventory_nbt_contains_main_slots_only() {
         init_test_registry();
-        let mut inventory = PlayerInventory::new(Weak::new());
+        let mut inventory = PlayerInventory::new();
         inventory.items[2] = ItemStack::new(&vanilla_items::STONE);
-        inventory.equipment_mut().set(
+        inventory.set(
             EquipmentSlot::Head,
             ItemStack::new(&vanilla_items::DIAMOND_HELMET),
         );
@@ -1850,7 +2001,7 @@ mod tests {
     fn add_marks_changed_when_stack_fills_existing_slot() {
         init_test_registry();
 
-        let mut inventory = PlayerInventory::new(Weak::new());
+        let mut inventory = PlayerInventory::new();
         inventory.items[0] = ItemStack::with_count(&vanilla_items::OAK_LOG, 63);
         let before = inventory.get_times_changed();
 
@@ -1863,49 +2014,57 @@ mod tests {
     }
 
     #[test]
-    fn add_to_selected_existing_slot_marks_main_hand_dirty() {
+    fn add_to_selected_existing_slot_marks_inventory_changed() {
         init_test_registry();
 
-        let mut inventory = PlayerInventory::new(Weak::new());
+        let mut inventory = PlayerInventory::new();
         inventory.items[0] = ItemStack::with_count(&vanilla_items::OAK_LOG, 63);
-        inventory.drain_dirty_equipment_items();
+        let before = inventory.get_times_changed();
 
         let mut stack = ItemStack::new(&vanilla_items::OAK_LOG);
         assert!(inventory.add(&mut stack));
 
-        assert_eq!(
-            inventory.drain_dirty_equipment_items(),
-            vec![(
-                EquipmentSlot::MainHand,
-                ItemStack::with_count(&vanilla_items::OAK_LOG, 64)
-            )]
-        );
+        assert_eq!(inventory.get_selected_item().count(), 64);
+        assert_ne!(inventory.get_times_changed(), before);
     }
 
     #[test]
-    fn add_to_empty_selected_slot_marks_main_hand_dirty() {
+    fn add_to_empty_selected_slot_marks_inventory_changed() {
         init_test_registry();
 
-        let mut inventory = PlayerInventory::new(Weak::new());
-        inventory.drain_dirty_equipment_items();
+        let mut inventory = PlayerInventory::new();
+        let before = inventory.get_times_changed();
 
         let mut stack = ItemStack::with_count(&vanilla_items::OAK_LOG, 3);
         assert!(inventory.add(&mut stack));
 
-        assert_eq!(
-            inventory.drain_dirty_equipment_items(),
-            vec![(
-                EquipmentSlot::MainHand,
-                ItemStack::with_count(&vanilla_items::OAK_LOG, 3)
-            )]
+        assert_eq!(inventory.get_selected_item().count(), 3);
+        assert_ne!(inventory.get_times_changed(), before);
+    }
+
+    #[test]
+    fn add_merges_into_existing_offhand_stack_before_main_inventory() {
+        init_test_registry();
+
+        let mut inventory = PlayerInventory::new();
+        inventory.set(
+            EquipmentSlot::OffHand,
+            ItemStack::with_count(&vanilla_items::OAK_LOG, 63),
         );
+
+        let mut stack = ItemStack::new(&vanilla_items::OAK_LOG);
+        assert!(inventory.add(&mut stack));
+
+        assert!(stack.is_empty());
+        assert_eq!(inventory.get_ref(EquipmentSlot::OffHand).count(), 64);
+        assert!(inventory.get_items().iter().all(ItemStack::is_empty));
     }
 
     #[test]
     fn contains_stack_compares_components() {
         init_test_registry();
 
-        let mut inventory = PlayerInventory::new(Weak::new());
+        let mut inventory = PlayerInventory::new();
         let mut damaged_in_inventory = ItemStack::new(&vanilla_items::DIAMOND_PICKAXE);
         damaged_in_inventory.set_damage_value(3);
         inventory.items[0] = damaged_in_inventory;
@@ -1922,7 +2081,7 @@ mod tests {
     fn filled_result_replaces_single_survival_hand_stack() {
         init_test_registry();
 
-        let mut inventory = PlayerInventory::new(Weak::new());
+        let mut inventory = PlayerInventory::new();
         inventory.set_selected_item(ItemStack::new(&vanilla_items::WATER_BUCKET));
 
         let overflow = inventory.apply_filled_result(
@@ -1943,7 +2102,7 @@ mod tests {
     fn filled_result_adds_result_for_stacked_survival_hand_stack() {
         init_test_registry();
 
-        let mut inventory = PlayerInventory::new(Weak::new());
+        let mut inventory = PlayerInventory::new();
         inventory.set_selected_item(ItemStack::with_count(&vanilla_items::BUCKET, 2));
 
         let overflow = inventory.apply_filled_result(
@@ -1968,7 +2127,7 @@ mod tests {
     fn filled_result_creative_limited_keeps_matching_held_stack() {
         init_test_registry();
 
-        let mut inventory = PlayerInventory::new(Weak::new());
+        let mut inventory = PlayerInventory::new();
         inventory.set_selected_item(ItemStack::new(&vanilla_items::WATER_BUCKET));
 
         let overflow = inventory.apply_filled_result(
@@ -1995,7 +2154,7 @@ mod tests {
     fn filled_result_creative_limited_adds_missing_result_without_consuming_hand() {
         init_test_registry();
 
-        let mut inventory = PlayerInventory::new(Weak::new());
+        let mut inventory = PlayerInventory::new();
         inventory.set_selected_item(ItemStack::with_count(&vanilla_items::BUCKET, 16));
 
         let overflow = inventory.apply_filled_result(
@@ -2020,7 +2179,7 @@ mod tests {
     fn filled_result_empty_result_still_consumes_survival_hand_stack() {
         init_test_registry();
 
-        let mut inventory = PlayerInventory::new(Weak::new());
+        let mut inventory = PlayerInventory::new();
         inventory.set_selected_item(ItemStack::new(&vanilla_items::BUCKET));
 
         let overflow = inventory.apply_filled_result(
@@ -2038,7 +2197,7 @@ mod tests {
     fn filled_result_creative_unlimited_discards_unadded_result() {
         init_test_registry();
 
-        let mut inventory = PlayerInventory::new(Weak::new());
+        let mut inventory = PlayerInventory::new();
         inventory.set_selected_item(ItemStack::new(&vanilla_items::LAVA_BUCKET));
         for slot in 1..PlayerInventory::INVENTORY_SIZE {
             inventory.items[slot] = ItemStack::with_count(&vanilla_items::OAK_LOG, 64);
@@ -2062,9 +2221,9 @@ mod tests {
     fn clear_content_counts_equipment_items() {
         init_test_registry();
 
-        let mut inventory = PlayerInventory::new(Weak::new());
+        let mut inventory = PlayerInventory::new();
         inventory.items[0] = ItemStack::with_count(&vanilla_items::OAK_LOG, 3);
-        inventory.equipment.set(
+        inventory.set(
             EquipmentSlot::Head,
             ItemStack::new(&vanilla_items::DIAMOND_HELMET),
         );
@@ -2077,11 +2236,7 @@ mod tests {
     fn container_traversal_matches_visible_slot_indices() {
         init_test_registry();
 
-        let mut inventory = PlayerInventory::new(Weak::new());
-        inventory.equipment.set(
-            EquipmentSlot::MainHand,
-            ItemStack::new(&vanilla_items::STICK),
-        );
+        let mut inventory = PlayerInventory::new();
         let size = inventory.get_container_size();
         for slot in 0..size {
             inventory.set_item(
@@ -2106,12 +2261,6 @@ mod tests {
         for slot in 0..size {
             assert_eq!(inventory.get_item(slot).count(), (size - slot) as i32);
         }
-        assert!(
-            inventory
-                .equipment
-                .get_ref(EquipmentSlot::MainHand)
-                .is(&vanilla_items::STICK)
-        );
 
         let mut predicate_visits = 0;
         inventory.clear_content_matching(&mut |_| {
@@ -2119,32 +2268,111 @@ mod tests {
             false
         });
         assert_eq!(predicate_visits, size);
+    }
 
-        let mut shadow_only = PlayerInventory::new(Weak::new());
-        shadow_only.equipment.set(
-            EquipmentSlot::MainHand,
-            ItemStack::new(&vanilla_items::STICK),
+    #[test]
+    fn equipment_trait_aliases_vanilla_container_indices() {
+        let inventory = PlayerInventory::new();
+        assert_eq!(inventory.items().len(), PlayerInventory::CONTAINER_SIZE);
+        assert_eq!(
+            inventory.get_container_size(),
+            PlayerInventory::CONTAINER_SIZE
         );
-        assert!(shadow_only.is_empty());
-        assert_eq!(shadow_only.clear_content(), 0);
-        assert!(shadow_only.equipment.is_empty());
+        assert!(ptr::eq(
+            inventory.get_ref(EquipmentSlot::MainHand),
+            inventory.get_item(0)
+        ));
+
+        for (equipment_slot, container_slot) in [
+            (EquipmentSlot::Feet, 36),
+            (EquipmentSlot::Legs, 37),
+            (EquipmentSlot::Chest, 38),
+            (EquipmentSlot::Head, 39),
+            (EquipmentSlot::OffHand, 40),
+            (EquipmentSlot::Body, 41),
+            (EquipmentSlot::Saddle, 42),
+        ] {
+            assert!(ptr::eq(
+                inventory.get_ref(equipment_slot),
+                inventory.get_item(container_slot)
+            ));
+        }
+    }
+
+    #[test]
+    fn mutable_container_slice_exposes_all_logical_slots() {
+        init_test_registry();
+
+        let mut inventory = PlayerInventory::new();
+        {
+            let items = inventory.items_mut();
+            items[0] = ItemStack::new(&vanilla_items::STICK);
+            items[39] = ItemStack::new(&vanilla_items::DIAMOND_HELMET);
+        }
+        inventory.set_changed();
+
+        assert!(
+            inventory
+                .get_ref(EquipmentSlot::MainHand)
+                .is(&vanilla_items::STICK)
+        );
+        assert!(
+            inventory
+                .get_ref(EquipmentSlot::Head)
+                .is(&vanilla_items::DIAMOND_HELMET)
+        );
+    }
+
+    #[test]
+    fn main_inventory_search_does_not_use_equipment_slots() {
+        init_test_registry();
+
+        let mut inventory = PlayerInventory::new();
+        for slot in 0..PlayerInventory::INVENTORY_SIZE {
+            inventory.items[slot] = ItemStack::with_count(&vanilla_items::OAK_LOG, 64);
+        }
+        inventory.set(EquipmentSlot::Head, ItemStack::new(&vanilla_items::STONE));
+
+        assert_eq!(inventory.get_free_slot(), -1);
+        assert_eq!(
+            inventory.find_slot_matching_item(&ItemStack::new(&vanilla_items::STONE)),
+            -1
+        );
+    }
+
+    #[test]
+    fn equipment_main_hand_follows_selected_slot() {
+        init_test_registry();
+
+        let mut inventory = PlayerInventory::new();
+        inventory.items[0] = ItemStack::new(&vanilla_items::STICK);
+        inventory.items[1] = ItemStack::new(&vanilla_items::OAK_LOG);
+
+        assert!(
+            inventory
+                .get_ref(EquipmentSlot::MainHand)
+                .is(&vanilla_items::STICK)
+        );
+        inventory.set_selected_slot(1);
+        assert!(
+            inventory
+                .get_ref(EquipmentSlot::MainHand)
+                .is(&vanilla_items::OAK_LOG)
+        );
+        assert!(inventory.items[0].is(&vanilla_items::STICK));
     }
 
     #[test]
     fn non_empty_equipment_items_uses_selected_item_as_main_hand() {
         init_test_registry();
 
-        let mut inventory = PlayerInventory::new(Weak::new());
+        let mut inventory = PlayerInventory::new();
         let main_hand = ItemStack::with_count(&vanilla_items::OAK_LOG, 2);
         let head = ItemStack::new(&vanilla_items::DIAMOND_HELMET);
         inventory.items[0] = main_hand.clone();
-        inventory.equipment.set(
-            EquipmentSlot::MainHand,
-            ItemStack::new(&vanilla_items::STICK),
-        );
-        inventory.equipment.set(EquipmentSlot::Head, head.clone());
+        inventory.set(EquipmentSlot::Head, head.clone());
 
-        let items = inventory.non_empty_equipment_items();
+        let items = inventory.non_empty_items();
 
         assert_eq!(items.len(), 2);
         assert!(items.contains(&(EquipmentSlot::MainHand, main_hand)));
@@ -2152,23 +2380,8 @@ mod tests {
     }
 
     #[test]
-    fn selected_slot_change_drains_main_hand_equipment_update_once() {
-        init_test_registry();
-
-        let mut inventory = PlayerInventory::new(Weak::new());
-        let selected = ItemStack::new(&vanilla_items::OAK_LOG);
-        inventory.items[1] = selected.clone();
-
-        inventory.set_selected_slot(1);
-        let dirty_items = inventory.drain_dirty_equipment_items();
-
-        assert_eq!(dirty_items, vec![(EquipmentSlot::MainHand, selected)]);
-        assert!(inventory.drain_dirty_equipment_items().is_empty());
-    }
-
-    #[test]
     fn packet_selected_slot_rejects_invalid_values_without_wrapping() {
-        let mut inventory = PlayerInventory::new(Weak::new());
+        let mut inventory = PlayerInventory::new();
 
         assert!(inventory.try_set_selected_slot_from_packet(8).is_ok());
         assert_eq!(inventory.get_selected_slot(), 8);
@@ -2193,48 +2406,32 @@ mod tests {
     }
 
     #[test]
-    fn shrink_item_in_hand_marks_changed_and_dirty_equipment() {
+    fn shrink_item_in_hand_marks_inventory_changed() {
         init_test_registry();
 
-        let mut inventory = PlayerInventory::new(Weak::new());
+        let mut inventory = PlayerInventory::new();
         inventory.set_selected_item(ItemStack::with_count(&vanilla_items::OAK_LOG, 3));
         inventory.set_offhand_item(ItemStack::with_count(&vanilla_items::SHIELD, 2));
-        inventory.drain_dirty_equipment_items();
 
         let before = inventory.get_times_changed();
         inventory.shrink_item_in_hand(InteractionHand::MainHand, 1);
 
         assert_eq!(inventory.get_selected_item().count(), 2);
         assert_ne!(inventory.get_times_changed(), before);
-        assert_eq!(
-            inventory.drain_dirty_equipment_items(),
-            vec![(
-                EquipmentSlot::MainHand,
-                ItemStack::with_count(&vanilla_items::OAK_LOG, 2)
-            )]
-        );
 
         let before = inventory.get_times_changed();
         inventory.shrink_item_in_hand(InteractionHand::OffHand, 1);
 
         assert_eq!(inventory.get_offhand_item().count(), 1);
         assert_ne!(inventory.get_times_changed(), before);
-        assert_eq!(
-            inventory.drain_dirty_equipment_items(),
-            vec![(
-                EquipmentSlot::OffHand,
-                ItemStack::with_count(&vanilla_items::SHIELD, 1)
-            )]
-        );
     }
 
     #[test]
-    fn split_item_in_hand_marks_changed_and_dirty_equipment() {
+    fn split_item_in_hand_marks_inventory_changed() {
         init_test_registry();
 
-        let mut inventory = PlayerInventory::new(Weak::new());
+        let mut inventory = PlayerInventory::new();
         inventory.set_selected_item(ItemStack::with_count(&vanilla_items::OAK_LOG, 3));
-        inventory.drain_dirty_equipment_items();
 
         let before = inventory.get_times_changed();
         let split = inventory.split_item_in_hand(InteractionHand::MainHand, 1);
@@ -2242,22 +2439,35 @@ mod tests {
         assert_eq!(split, ItemStack::with_count(&vanilla_items::OAK_LOG, 1));
         assert_eq!(inventory.get_selected_item().count(), 2);
         assert_ne!(inventory.get_times_changed(), before);
+    }
+
+    #[test]
+    fn mutating_only_held_item_components_marks_inventory_changed() {
+        init_test_registry();
+
+        let mut inventory = PlayerInventory::new();
+        inventory.set_selected_item(ItemStack::new(&vanilla_items::DIAMOND_SWORD));
+
+        let before = inventory.get_times_changed();
+        inventory.mutate_item_in_hand(InteractionHand::MainHand, |stack| {
+            stack.set_enchantments(&[(Identifier::vanilla_static("sharpness"), 1)], false);
+        });
+
+        assert_ne!(inventory.get_times_changed(), before);
         assert_eq!(
-            inventory.drain_dirty_equipment_items(),
-            vec![(
-                EquipmentSlot::MainHand,
-                ItemStack::with_count(&vanilla_items::OAK_LOG, 2)
-            )]
+            inventory
+                .get_selected_item()
+                .get_enchantment_level(&Identifier::vanilla_static("sharpness")),
+            1
         );
     }
 
     #[test]
-    fn hurt_item_in_hand_marks_changed_and_dirty_equipment() {
+    fn hurt_item_in_hand_marks_inventory_changed() {
         init_test_registry();
 
-        let mut inventory = PlayerInventory::new(Weak::new());
+        let mut inventory = PlayerInventory::new();
         inventory.set_selected_item(ItemStack::new(&vanilla_items::SHEARS));
-        inventory.drain_dirty_equipment_items();
 
         let before = inventory.get_times_changed();
         inventory.hurt_item_in_hand(InteractionHand::MainHand, 1, false);
@@ -2265,21 +2475,15 @@ mod tests {
         let main_hand = inventory.get_selected_item();
         assert!(main_hand.is(&vanilla_items::SHEARS));
         assert_eq!(main_hand.get_damage_value(), 1);
-        let expected = main_hand.copy_with_count(1);
         assert_ne!(inventory.get_times_changed(), before);
-        assert_eq!(
-            inventory.drain_dirty_equipment_items(),
-            vec![(EquipmentSlot::MainHand, expected)]
-        );
     }
 
     #[test]
     fn hurt_and_convert_item_in_hand_damages_without_breaking() {
         init_test_registry();
 
-        let mut inventory = PlayerInventory::new(Weak::new());
+        let mut inventory = PlayerInventory::new();
         inventory.set_offhand_item(ItemStack::new(&vanilla_items::CARROT_ON_A_STICK));
-        inventory.drain_dirty_equipment_items();
 
         let before = inventory.get_times_changed();
         inventory.hurt_and_convert_item_in_hand_on_break(
@@ -2292,25 +2496,19 @@ mod tests {
         let offhand = inventory.get_offhand_item();
         assert!(offhand.is(&vanilla_items::CARROT_ON_A_STICK));
         assert_eq!(offhand.get_damage_value(), 1);
-        let expected = offhand.copy_with_count(1);
         assert_ne!(inventory.get_times_changed(), before);
-        assert_eq!(
-            inventory.drain_dirty_equipment_items(),
-            vec![(EquipmentSlot::OffHand, expected)]
-        );
     }
 
     #[test]
     fn hurt_and_convert_item_in_hand_replaces_broken_item() {
         init_test_registry();
 
-        let mut inventory = PlayerInventory::new(Weak::new());
+        let mut inventory = PlayerInventory::new();
         inventory.set_selected_item(ItemStack::new(&vanilla_items::CARROT_ON_A_STICK));
         let max_damage = inventory.get_selected_item().get_max_damage();
         inventory
             .get_selected_item_mut()
             .set_damage_value(max_damage - 1);
-        inventory.drain_dirty_equipment_items();
 
         let before = inventory.get_times_changed();
         inventory.hurt_and_convert_item_in_hand_on_break(
@@ -2324,39 +2522,30 @@ mod tests {
         assert!(main_hand.is(&vanilla_items::FISHING_ROD));
         assert_eq!(main_hand.count(), 1);
         assert_eq!(main_hand.get_damage_value(), 0);
-        let expected = main_hand.copy_with_count(1);
         assert_ne!(inventory.get_times_changed(), before);
-        assert_eq!(
-            inventory.drain_dirty_equipment_items(),
-            vec![(EquipmentSlot::MainHand, expected)]
-        );
     }
 
     #[test]
     fn swap_hands_swaps_selected_and_offhand() {
         init_test_registry();
 
-        let mut inventory = PlayerInventory::new(Weak::new());
+        let mut inventory = PlayerInventory::new();
         let main_hand = ItemStack::with_count(&vanilla_items::OAK_LOG, 3);
         let offhand = ItemStack::new(&vanilla_items::SHIELD);
         inventory.set_selected_item(main_hand.clone());
         inventory.set_offhand_item(offhand.clone());
-        inventory.drain_dirty_equipment_items();
 
         assert!(inventory.swap_hands());
 
         assert_eq!(inventory.get_selected_item(), &offhand);
         assert_eq!(inventory.get_offhand_item(), &main_hand);
-        let dirty_items = inventory.drain_dirty_equipment_items();
-        assert!(dirty_items.contains(&(EquipmentSlot::MainHand, offhand)));
-        assert!(dirty_items.contains(&(EquipmentSlot::OffHand, main_hand)));
     }
 
     #[test]
     fn equippable_single_item_moves_to_empty_armor_slot() {
         init_test_registry();
 
-        let mut inventory = PlayerInventory::new(Weak::new());
+        let mut inventory = PlayerInventory::new();
         inventory.set_selected_item(ItemStack::new(&vanilla_items::DIAMOND_HELMET));
 
         let result = inventory.try_swap_with_equipment_slot(
@@ -2368,7 +2557,7 @@ mod tests {
         assert_eq!(result, EquipmentSwapResult::Success(ItemStack::empty()));
         assert!(inventory.get_selected_item().is_empty());
         assert_eq!(
-            inventory.equipment().get_ref(EquipmentSlot::Head),
+            inventory.get_ref(EquipmentSlot::Head),
             &ItemStack::new(&vanilla_items::DIAMOND_HELMET)
         );
     }
@@ -2377,13 +2566,11 @@ mod tests {
     fn equippable_swap_respects_prevent_armor_change_effect() {
         init_test_registry();
 
-        let mut inventory = PlayerInventory::new(Weak::new());
+        let mut inventory = PlayerInventory::new();
         let mut bound_helmet = ItemStack::new(&vanilla_items::DIAMOND_HELMET);
         bound_helmet.set_enchantments(&[(Identifier::vanilla_static("binding_curse"), 1)], false);
         inventory.set_selected_item(ItemStack::new(&vanilla_items::CARVED_PUMPKIN));
-        inventory
-            .equipment_mut()
-            .set(EquipmentSlot::Head, bound_helmet.copy_with_count(1));
+        inventory.set(EquipmentSlot::Head, bound_helmet.copy_with_count(1));
 
         let result = inventory.try_swap_with_equipment_slot(
             InteractionHand::MainHand,
@@ -2396,22 +2583,18 @@ mod tests {
             inventory.get_selected_item(),
             &ItemStack::new(&vanilla_items::CARVED_PUMPKIN)
         );
-        assert_eq!(
-            inventory.equipment().get_ref(EquipmentSlot::Head),
-            &bound_helmet
-        );
+        assert_eq!(inventory.get_ref(EquipmentSlot::Head), &bound_helmet);
     }
 
     #[test]
     fn repair_with_xp_repairs_damaged_mending_item() {
         init_test_registry();
 
-        let mut inventory = PlayerInventory::new(Weak::new());
+        let mut inventory = PlayerInventory::new();
         let mut pickaxe = ItemStack::new(&vanilla_items::DIAMOND_PICKAXE);
         pickaxe.set_damage_value(10);
         pickaxe.set_enchantments(&[(Identifier::vanilla_static("mending"), 1)], false);
         inventory.set_selected_item(pickaxe);
-        inventory.drain_dirty_equipment_items();
         let before = inventory.get_times_changed();
 
         let remaining = inventory.repair_random_equipped_item_with_xp(3);
@@ -2419,20 +2602,13 @@ mod tests {
         assert_eq!(remaining, 0);
         assert_eq!(inventory.get_selected_item().get_damage_value(), 4);
         assert_ne!(inventory.get_times_changed(), before);
-        assert_eq!(
-            inventory.drain_dirty_equipment_items(),
-            vec![(
-                EquipmentSlot::MainHand,
-                inventory.get_selected_item().copy_with_count(1)
-            )]
-        );
     }
 
     #[test]
     fn repair_with_xp_returns_leftover_when_item_is_fully_repaired() {
         init_test_registry();
 
-        let mut inventory = PlayerInventory::new(Weak::new());
+        let mut inventory = PlayerInventory::new();
         let mut pickaxe = ItemStack::new(&vanilla_items::DIAMOND_PICKAXE);
         pickaxe.set_damage_value(3);
         pickaxe.set_enchantments(&[(Identifier::vanilla_static("mending"), 1)], false);
@@ -2448,9 +2624,9 @@ mod tests {
     fn equippable_stack_moves_one_item_and_returns_old_equipment_to_inventory() {
         init_test_registry();
 
-        let mut inventory = PlayerInventory::new(Weak::new());
+        let mut inventory = PlayerInventory::new();
         inventory.set_selected_item(ItemStack::with_count(&vanilla_items::CARVED_PUMPKIN, 2));
-        inventory.equipment_mut().set(
+        inventory.set(
             EquipmentSlot::Head,
             ItemStack::new(&vanilla_items::DIAMOND_HELMET),
         );
@@ -2464,7 +2640,7 @@ mod tests {
         assert_eq!(result, EquipmentSwapResult::Success(ItemStack::empty()));
         assert_eq!(inventory.get_selected_item().count(), 1);
         assert_eq!(
-            inventory.equipment().get_ref(EquipmentSlot::Head),
+            inventory.get_ref(EquipmentSlot::Head),
             &ItemStack::new(&vanilla_items::CARVED_PUMPKIN)
         );
         assert!(

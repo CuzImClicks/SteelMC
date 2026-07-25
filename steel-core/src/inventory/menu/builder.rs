@@ -364,21 +364,18 @@ impl SectionKind {
                 index,
                 may_place.clone(),
                 None,
-                64,
             )),
             Self::Guarded(may_place, may_pickup) => SlotType::Restricted(RestrictedSlot::new(
                 container.clone(),
                 index,
                 may_place.clone(),
                 Some(may_pickup.clone()),
-                64,
             )),
             Self::Display => SlotType::Restricted(RestrictedSlot::new(
                 container.clone(),
                 index,
                 deny_place(),
                 Some(deny_pickup()),
-                64,
             )),
             Self::Custom(factory) => factory(container, index),
         }
@@ -427,11 +424,21 @@ pub enum FillDirection {
     Backward,
 }
 
+/// What to do with fake result output that cannot fit during a shift-click.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FakeResultRemainderPolicy {
+    /// Drop the unresolved output into the world, as crafting menus do.
+    Drop,
+    /// Discard the unresolved output after the result handler runs, as anvils do.
+    Discard,
+}
+
 /// A shift clicking Route that goes from a single Range to a Vec of Ranges.
 pub(crate) struct Route {
     pub(crate) from: Range<usize>,
     pub(crate) targets: Vec<Range<usize>>,
     pub(crate) direction: FillDirection,
+    pub(crate) fake_result_remainder: FakeResultRemainderPolicy,
 }
 
 /// Builds a Menu.
@@ -441,6 +448,7 @@ pub struct MenuBuilder {
     instance: MenuInstanceId,
     menu_type: Option<MenuTypeRef>,
     container_id: u8,
+    overrides_player_slots: bool,
     slots: Vec<SlotType>,
     container_refs: Vec<ContainerRef>,
     data_slots: Vec<i16>,
@@ -473,6 +481,7 @@ impl MenuBuilder {
             instance: MenuInstanceId::next(),
             menu_type: menu_type.into(),
             container_id,
+            overrides_player_slots: false,
             slots: Vec::new(),
             container_refs: Vec::new(),
             data_slots: Vec::new(),
@@ -746,6 +755,22 @@ impl MenuBuilder {
         targets: impl IntoSections,
         direction: FillDirection,
     ) -> &mut Self {
+        self.route_with_remainder_policy(from, targets, direction, FakeResultRemainderPolicy::Drop)
+    }
+
+    /// Declares a shift-click route with an explicit fake-result remainder
+    /// policy. The policy has no effect on ordinary source slots.
+    ///
+    /// # Panics
+    /// Panics if a section belongs to another builder, a source overlaps an
+    /// existing route, or a target overlaps its source.
+    pub fn route_with_remainder_policy(
+        &mut self,
+        from: impl IntoSections,
+        targets: impl IntoSections,
+        direction: FillDirection,
+        fake_result_remainder: FakeResultRemainderPolicy,
+    ) -> &mut Self {
         let targets: Vec<Range<usize>> = targets.into_sections().map(|s| self.owned(s)).collect();
         for from in from.into_sections() {
             let from = self.owned(from);
@@ -766,6 +791,7 @@ impl MenuBuilder {
                 from,
                 targets: targets.clone(),
                 direction,
+                fake_result_remainder,
             });
         }
         self
@@ -812,6 +838,15 @@ impl MenuBuilder {
         self
     }
 
+    /// Declares that this menu paints over the client's standard 36 player slots.
+    ///
+    /// Pending logical inventory updates are deferred while the
+    /// menu is open and the slots are restored when it closes.
+    pub const fn overrides_player_slots(&mut self) -> &mut Self {
+        self.overrides_player_slots = true;
+        self
+    }
+
     /// Consumes the builder, creating the finished [`Menu`].
     ///
     /// # Panics
@@ -845,7 +880,7 @@ impl MenuBuilder {
             routes: self.routes,
             drain_sections: self.drain_sections,
         };
-        Menu::from_parts(behavior, layout, kind.into())
+        Menu::from_parts(behavior, layout, kind.into(), self.overrides_player_slots)
     }
 
     /// The identity of the menu being built.
@@ -919,8 +954,6 @@ impl MenuBuilder {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Weak;
-
     use steel_registry::{test_support::init_test_registry, vanilla_items, vanilla_menu_types};
     use steel_utils::locks::IntoShared;
 
@@ -949,7 +982,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "shift-click route source 0..27 overlaps an existing route source")]
     fn route_rejects_overlapping_source_sections() {
-        let inventory = PlayerInventory::new(Weak::new()).into_shared();
+        let inventory = PlayerInventory::new().into_shared();
         let mut builder = MenuBuilder::new(None, 0);
         let player = builder.player_inventory(&inventory);
         let target = builder.section(SimpleContainer::new(1).into_shared(), 1);
