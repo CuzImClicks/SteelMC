@@ -49,33 +49,30 @@ pub fn anvil(
 
     let mut builder = MenuBuilder::new(&vanilla_menu_types::ANVIL, container_id);
 
-    let input = builder.section(input_container.clone(), 2);
-    let result = builder.result_slot(
-        AnvilResultHandler::new(
-            input_container.clone(),
-            result_container.clone(),
-            repair_item_count.clone(),
-            level_cost.clone(),
-            only_renaming.clone(),
-            pos,
-            world.clone(),
-        ),
+    let input = builder.section_all(&input_container);
+    let result = builder.result_slot(AnvilResultHandler::new(
+        input_container.clone(),
         result_container.clone(),
-    );
+        repair_item_count.clone(),
+        level_cost.clone(),
+        only_renaming.clone(),
+        pos,
+        world.clone(),
+    ));
 
     let player = builder.player_inventory(&inventory);
 
     let level_cost_data_slot = builder.data_slot(0);
 
-    builder.route(result, [player.all()], FillDirection::Backward);
-    builder.route(input, [player.all()], FillDirection::Forward);
-    builder.route(player.hotbar(), [input], FillDirection::Forward);
+    builder.route(result, player.all(), FillDirection::Backward);
+    builder.route(input, player.all(), FillDirection::Forward);
+    builder.route(player.hotbar(), input, FillDirection::Forward);
     builder.route(
         player.main(),
         [input, player.hotbar()],
         FillDirection::Forward,
     );
-    builder.drain([input]);
+    builder.drain(input);
 
     builder.build(AnvilKind {
         input_container,

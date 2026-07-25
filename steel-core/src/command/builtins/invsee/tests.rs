@@ -103,15 +103,29 @@ fn readonly_target_slots_reject_pickup_and_creative_clone() {
 }
 
 #[test]
-fn modify_view_can_fully_edit_target_armor_slots() {
+fn modify_view_edits_armor_slots_within_equipment_rules() {
     let source = test_player(8, "Viewer", 8);
     let target = test_player(9, "Target", 9);
     let Ok((_, modify)) = invsee_permissions() else {
         panic!("built-in invsee permissions should parse");
     };
     let mut menu = invsee(1, &source, &target, true, modify);
-    *menu.behavior_mut().carried_mut() = ItemStack::new(&vanilla_items::STONE);
 
+    *menu.behavior_mut().carried_mut() = ItemStack::new(&vanilla_items::STONE);
+    menu.clicked(
+        Click::Pickup {
+            slot: TARGET_ARMOR_START,
+            button: MouseButton::Left,
+        },
+        &source,
+    );
+    assert!(
+        target.inventory.lock().get_item(39).is_empty(),
+        "a non-equippable item must not enter the head slot"
+    );
+    assert!(menu.behavior().carried().is(&vanilla_items::STONE));
+
+    *menu.behavior_mut().carried_mut() = ItemStack::new(&vanilla_items::IRON_HELMET);
     menu.clicked(
         Click::Pickup {
             slot: TARGET_ARMOR_START,
@@ -125,7 +139,7 @@ fn modify_view_can_fully_edit_target_armor_slots() {
             .inventory
             .lock()
             .get_item(39)
-            .is(&vanilla_items::STONE)
+            .is(&vanilla_items::IRON_HELMET)
     );
     assert!(menu.behavior().carried().is_empty());
 }
@@ -178,8 +192,10 @@ fn modify_view_extracts_but_cannot_insert_crafting_items() {
     menu.on_open(&source);
 
     {
-        let result = handler.result_container();
-        let result = result.lock();
+        let guard = menu.behavior().lock_all_containers();
+        let result = guard
+            .get(handler.result_id())
+            .expect("result container is registered with the menu");
         assert!(result.get_item(0).is(&vanilla_items::OAK_PLANKS));
         assert_eq!(result.get_item(0).count(), 4);
     }
@@ -192,7 +208,13 @@ fn modify_view_extracts_but_cannot_insert_crafting_items() {
         &source,
     );
     assert!(handler.crafting_container().lock().get_item(0).is_empty());
-    assert!(handler.result_container().lock().get_item(0).is_empty());
+    {
+        let guard = menu.behavior().lock_all_containers();
+        let result = guard
+            .get(handler.result_id())
+            .expect("result container is registered with the menu");
+        assert!(result.get_item(0).is_empty());
+    }
     assert!(menu.behavior().carried().is(&vanilla_items::OAK_LOG));
 
     menu.clicked(

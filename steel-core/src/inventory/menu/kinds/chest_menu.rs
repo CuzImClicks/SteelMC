@@ -11,9 +11,6 @@ use steel_registry::vanilla_menu_types;
 use crate::inventory::prelude::*;
 use crate::player::player_inventory::PlayerInventory;
 
-/// Slots per row in a chest menu.
-pub const SLOTS_PER_ROW: usize = 9;
-
 /// Builds a chest-like menu with `rows` rows of 9 slots plus the player inventory.
 ///
 /// # Panics
@@ -32,11 +29,11 @@ pub fn chest(
     );
 
     let mut builder = MenuBuilder::new(menu_type_for_rows(rows), container_id);
-    let chest = builder.section(container.clone(), rows * SLOTS_PER_ROW);
+    let chest = builder.section_all(&container);
     let player = builder.player_inventory(&inventory);
 
-    builder.route(chest, [player.all()], FillDirection::Backward);
-    builder.route(player.all(), [chest], FillDirection::Forward);
+    builder.route(chest, player.all(), FillDirection::Backward);
+    builder.route(player.all(), chest, FillDirection::Forward);
 
     builder.build(ChestKind { container })
 }

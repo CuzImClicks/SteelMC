@@ -86,19 +86,19 @@ fn domain_menu(
         g.paint_all(ItemStack::empty());
         g.paint(
             Rect::cols(..).rows(0),
-            ItemStack::new(&vanilla_items::GRAY_STAINED_GLASS_PANE),
+            &vanilla_items::GRAY_STAINED_GLASS_PANE,
         );
         g.paint(
             Rect::cols(..).rows(5),
-            ItemStack::new(&vanilla_items::GRAY_STAINED_GLASS_PANE),
+            &vanilla_items::GRAY_STAINED_GLASS_PANE,
         );
         g.paint(
             Rect::cols(8).rows(..),
-            ItemStack::new(&vanilla_items::GRAY_STAINED_GLASS_PANE),
+            &vanilla_items::GRAY_STAINED_GLASS_PANE,
         );
         g.paint(
             Rect::cols(0).rows(1..5),
-            ItemStack::new(&vanilla_items::GRAY_STAINED_GLASS_PANE),
+            &vanilla_items::GRAY_STAINED_GLASS_PANE,
         );
 
         domain_names
@@ -126,8 +126,7 @@ fn domain_menu(
                     (
                         g.place(Rect::cols(1..(len + 1).min(6)).rows(0), container)
                             .display()
-                            .region()
-                            .single(),
+                            .section(),
                         worlds,
                     )
                 })

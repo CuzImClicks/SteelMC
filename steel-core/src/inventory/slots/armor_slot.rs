@@ -1,14 +1,12 @@
-use steel_registry::{
-    enchantment_effect::EnchantmentEffectComponent, equipment::EquipmentSlot, item_stack::ItemStack,
-};
-use steel_utils::locks::Shared;
-
 use crate::{
     inventory::{
         lock::{ContainerId, ContainerLockGuard, ContainerRef},
         slots::{NormalSlot, Slot},
     },
-    player::{Player, player_inventory::PlayerInventory},
+    player::Player,
+};
+use steel_registry::{
+    enchantment_effect::EnchantmentEffectComponent, equipment::EquipmentSlot, item_stack::ItemStack,
 };
 
 /// A [`NormalSlot`] that only accepts items equippable in its equipment slot,
@@ -20,7 +18,7 @@ pub struct ArmorSlot {
 
 impl ArmorSlot {
     /// Creates a new armor slot.
-    pub fn new(container: Shared<PlayerInventory>, index: usize, slot: EquipmentSlot) -> Self {
+    pub fn new(container: impl Into<ContainerRef>, index: usize, slot: EquipmentSlot) -> Self {
         Self {
             base: NormalSlot::new(container, index),
             slot,

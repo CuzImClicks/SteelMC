@@ -4,6 +4,7 @@ use std::{
     array,
     f32::consts::TAU,
     mem,
+    ops::Range,
     sync::{Arc, LazyLock, Weak},
 };
 
@@ -93,7 +94,7 @@ const CONTAINER_EQUIPMENT_SLOTS: [EquipmentSlot; 7] = [
     EquipmentSlot::Saddle,
 ];
 
-const fn slot_to_equipment(slot: usize) -> Option<EquipmentSlot> {
+pub(crate) const fn slot_to_equipment(slot: usize) -> Option<EquipmentSlot> {
     match slot {
         36 => Some(EquipmentSlot::Feet),
         37 => Some(EquipmentSlot::Legs),
@@ -104,6 +105,16 @@ const fn slot_to_equipment(slot: usize) -> Option<EquipmentSlot> {
         42 => Some(EquipmentSlot::Saddle),
         _ => None,
     }
+}
+
+/// The equipment slot for an armor/offhand container index.
+///
+/// # Panics
+/// Panics if `index` is not an equipment index. Menu sections restrict
+/// themselves to [`PlayerInventory::ARMOR_TOP_DOWN`] and
+/// [`PlayerInventory::SLOT_OFFHAND`], so this is unreachable from them.
+pub(crate) const fn armor_equipment(index: usize) -> EquipmentSlot {
+    slot_to_equipment(index).expect("armor sections only cover armor indices")
 }
 
 const fn hand_to_equipment_slot(hand: InteractionHand) -> EquipmentSlot {
@@ -144,6 +155,12 @@ impl PlayerInventory {
     pub const SELECTION_SIZE: usize = 9;
     /// Slot index for offhand.
     pub const SLOT_OFFHAND: usize = 40;
+    /// Hotbar container indices.
+    pub const HOTBAR: Range<usize> = 0..9;
+    /// Main storage container indices (everything except hotbar, armor, offhand).
+    pub const MAIN: Range<usize> = 9..36;
+    /// Armor container indices in display order (head, chest, legs, feet).
+    pub const ARMOR_TOP_DOWN: [usize; 4] = [39, 38, 37, 36];
 
     /// Creates a new player inventory with empty slots.
     #[must_use]

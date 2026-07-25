@@ -1010,7 +1010,6 @@ mod tests {
         menu::{
             Menu,
             builder::{FillDirection, MenuBuilder},
-            kind::MenuKindType,
             kinds::BasicKind,
         },
         slots::{NormalSlot, RestrictedSlot, Slot as _, SlotType},
@@ -1056,14 +1055,8 @@ mod tests {
         }));
         let container_ref = ContainerRef::from(container);
         let mut builder = MenuBuilder::new(None, 1);
-        builder.custom_section(
-            [SlotType::Normal(NormalSlot::new(container_ref.clone(), 0))],
-            [container_ref.clone()],
-        );
-        (
-            builder.build(MenuKindType::Basic(BasicKind {})),
-            container_ref,
-        )
+        builder.section(container_ref.clone(), 1);
+        (builder.build(BasicKind), container_ref)
     }
 
     #[test]
@@ -1139,7 +1132,7 @@ mod tests {
             ],
             [container_ref.clone()],
         );
-        let menu = builder.build(MenuKindType::Basic(BasicKind {}));
+        let menu = builder.build(BasicKind);
         let behavior = menu.behavior();
         let mut guard = behavior.lock_all_containers();
         let clicked = behavior.slots()[0].get_item(&guard).clone();

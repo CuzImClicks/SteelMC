@@ -11,9 +11,9 @@ use crate::inventory::container::Container as _;
 pub use behavior::MenuBehavior;
 pub use builder::{
     ContainerSlots, DataSlot, FillDirection, IntoSections, MenuBuilder, PlayerInventorySections,
-    Section, SectionSource,
+    Section, SectionKind, SectionSource, SlotFactory,
 };
-pub use grid::{ColSpan, GridPlacer, Rect, Region, RowSpan, SpanBounds};
+pub use grid::{ColSpan, GridPlacer, PlacementBuilder, Rect, Region, RowSpan, SpanBounds};
 pub use kind::{MenuKind, MenuKindType};
 pub(crate) use layout::MenuLayout;
 #[cfg(test)]

@@ -2856,6 +2856,7 @@ mod tests {
         Entity, EntitySyncedData, LivingEntity, RemovalReason, damage::DamageSource,
         entities::ItemEntity, next_entity_id,
     };
+    use crate::inventory::click::{Click, ClickOutcome, MouseButton};
     use crate::inventory::{
         container::{Container as _, SimpleContainer},
         equipment::EquipmentSlot,
@@ -2956,11 +2957,11 @@ mod tests {
             &mut self,
             _behavior: &mut MenuBehavior,
             _guard: &mut ContainerLockGuard,
-            _click: crate::inventory::click::Click,
+            _click: Click,
             player: &Player,
-        ) -> crate::inventory::click::ClickOutcome {
+        ) -> ClickOutcome {
             player.close_container();
-            crate::inventory::click::ClickOutcome::Consume
+            ClickOutcome::Consume
         }
     }
 
@@ -3122,8 +3123,8 @@ mod tests {
             let mut builder = MenuBuilder::new(&vanilla_menu_types::GENERIC_9X1, container_id);
             let transient_slots = builder.section(menu_container, 9);
             builder.player_inventory(&inventory);
-            builder.drain([transient_slots]);
-            builder.build(MenuKindType::Basic(BasicKind {}))
+            builder.drain(transient_slots);
+            builder.build(BasicKind)
         });
 
         probe_state.armed.store(true, Ordering::Release);
@@ -3215,13 +3216,13 @@ mod tests {
     fn programmatic_out_of_range_menu_click_is_ignored() {
         init_test_registry();
         let player = test_player(Arc::clone(test_world()));
-        let mut menu = empty_test_menu(&player, 1, MenuKindType::Basic(BasicKind {}));
+        let mut menu = empty_test_menu(&player, 1, MenuKindType::Basic(BasicKind));
         let invalid_slot = menu.behavior().slot_count();
 
         menu.clicked(
-            crate::inventory::click::Click::Pickup {
+            Click::Pickup {
                 slot: invalid_slot,
-                button: crate::inventory::click::MouseButton::Left,
+                button: MouseButton::Left,
             },
             &player,
         );
@@ -3303,7 +3304,7 @@ mod tests {
         });
 
         player.open_menu("Final", |container_id, _world| {
-            empty_test_menu(&player, container_id, MenuKindType::Basic(BasicKind {}))
+            empty_test_menu(&player, container_id, MenuKindType::Basic(BasicKind))
         });
 
         assert!(player.has_container_open());

@@ -3,9 +3,7 @@
 use std::sync::Arc;
 
 use enum_dispatch::enum_dispatch;
-use steel_registry::equipment::EquipmentSlot;
 use steel_registry::item_stack::ItemStack;
-use steel_utils::locks::Shared;
 
 use crate::inventory::lock::{ContainerId, ContainerLockGuard};
 use crate::inventory::slots::armor_slot::ArmorSlot;
@@ -13,7 +11,6 @@ use crate::inventory::slots::normal_slot::NormalSlot;
 use crate::inventory::slots::restricted_slot::RestrictedSlot;
 use crate::inventory::slots::result_slot::ResultSlot;
 use crate::player::Player;
-use crate::player::player_inventory::PlayerInventory;
 
 /// A view into a single position in a container, accessed via a `ContainerLockGuard`.
 #[enum_dispatch]
@@ -302,41 +299,6 @@ pub enum SlotType {
     Restricted(RestrictedSlot),
     /// Custom implementations by Plugins
     Custom(Arc<dyn Slot + Send + Sync>),
-}
-
-/// Adds hotbar slots (player inventory indices 0-8).
-pub fn add_hotbar_slots(slots: &mut Vec<SlotType>, inventory: &Shared<PlayerInventory>) {
-    for i in 0..9 {
-        slots.push(SlotType::Normal(NormalSlot::new(inventory.clone(), i)));
-    }
-}
-
-/// Adds main inventory slots (player inventory indices 9-35).
-pub fn add_inventory_slots(slots: &mut Vec<SlotType>, inventory: &Shared<PlayerInventory>) {
-    for i in 9..36 {
-        slots.push(SlotType::Normal(NormalSlot::new(inventory.clone(), i)));
-    }
-}
-
-/// Adds the main inventory (indices 9-35) followed by the hotbar (indices 0-8).
-pub fn add_standard_inventory_slots(
-    slots: &mut Vec<SlotType>,
-    inventory: &Shared<PlayerInventory>,
-) {
-    add_inventory_slots(slots, inventory);
-    add_hotbar_slots(slots, inventory);
-}
-
-/// The four armor slots in display order (head, chest, legs, feet).
-#[must_use]
-pub fn armor_slots(inventory: &Shared<PlayerInventory>) -> [SlotType; 4] {
-    [
-        (39, EquipmentSlot::Head),
-        (38, EquipmentSlot::Chest),
-        (37, EquipmentSlot::Legs),
-        (36, EquipmentSlot::Feet),
-    ]
-    .map(|(index, slot)| SlotType::Armor(ArmorSlot::new(inventory.clone(), index, slot)))
 }
 
 #[cfg(test)]

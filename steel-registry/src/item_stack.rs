@@ -35,7 +35,7 @@ use crate::{
     enchantment_effect::EnchantmentEffectComponent,
     equipment::EquipmentSlot,
     item_stack_template::ItemStackTemplate,
-    items::ItemRef,
+    items::{Item, ItemRef},
     vanilla_items,
 };
 
@@ -1049,6 +1049,24 @@ fn validate_contained_item_sizes<'a>(
         }
     }
     Ok(())
+}
+
+impl From<&ItemStack> for ItemStack {
+    fn from(stack: &Self) -> Self {
+        stack.to_owned()
+    }
+}
+
+impl From<ItemRef> for ItemStack {
+    fn from(item: ItemRef) -> Self {
+        Self::new(item)
+    }
+}
+
+impl From<&'static std::sync::LazyLock<Item>> for ItemStack {
+    fn from(item: &'static std::sync::LazyLock<Item>) -> Self {
+        Self::new(item)
+    }
 }
 
 impl std::fmt::Display for ItemStack {
