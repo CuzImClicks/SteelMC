@@ -13,7 +13,7 @@ use steel_utils::locks::{IntoShared, Shared};
 
 use crate::inventory::container::{CraftingContainer, ResultContainer};
 use crate::inventory::prelude::*;
-use crate::inventory::slots::{ArmorSlot, CraftingHandler, Slot as _};
+use crate::inventory::slots::{ArmorSlot, CraftingHandler};
 use crate::player::Player;
 use crate::player::player_inventory::{PlayerInventory, armor_equipment};
 
@@ -41,7 +41,7 @@ pub fn inventory_menu(inventory: Shared<PlayerInventory>) -> Menu {
         &inventory,
         PlayerInventory::ARMOR_TOP_DOWN,
         SectionKind::custom(|container, index| {
-            SlotType::Armor(ArmorSlot::new(
+            Box::new(ArmorSlot::new(
                 container.clone(),
                 index,
                 armor_equipment(index),
@@ -91,6 +91,13 @@ pub struct InventoryKind {
     hotbar: Section,
     /// Offhand (slot 45).
     offhand: Section,
+}
+
+// SAFETY: This Steel-owned key uniquely identifies the concrete menu kind
+// within the process.
+unsafe impl steel_utils::DowncastType for InventoryKind {
+    const TYPE_KEY: steel_utils::DowncastTypeKey =
+        steel_utils::DowncastTypeKey::new("steel:menu/inventory");
 }
 
 impl InventoryKind {

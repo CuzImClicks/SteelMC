@@ -50,7 +50,7 @@ use crate::inventory::lock::{ContainerLockGuard, ContainerRef};
 use crate::inventory::menu::builder::{
     IntoSections, MenuBuilder, MenuInstanceId, Section, SectionKind,
 };
-use crate::inventory::slots::{ResultHandler, ResultSlot, SlotType};
+use crate::inventory::slots::{ResultHandler, ResultSlot, Slot};
 use crate::player::Player;
 
 const GRID_WIDTH: usize = 9;
@@ -362,7 +362,7 @@ enum PlacementKind {
     },
     /// Cell `(x, y)` takes `slots[rect.local_index(x, y)]`, each `Some` until flushed.
     Slots {
-        slots: Vec<Option<SlotType>>,
+        slots: Vec<Option<Box<dyn Slot>>>,
         containers: Vec<ContainerRef>,
     },
 }
@@ -621,19 +621,43 @@ impl<'a> GridPlacer<'a> {
         )
     }
 
-    /// Adds pre-built slots over `rect`, consumed in row-major order.
+    /// Adds concrete pre-built slots over `rect`, consumed in row-major order.
     ///
     /// `containers` declares the containers the slots view, so the menu locks them.
+    /// Use [`place_boxed_slots`](Self::place_boxed_slots) for a heterogeneous or
+    /// already-erased collection.
     ///
     /// # Panics
     /// If the slot count differs from the rect's cell count, or on the overlap/bounds conditions of [`place`](Self::place).
-    pub fn place_slots(
+    pub fn place_slots<S>(
         &mut self,
         rect: Rect,
-        slots: impl IntoIterator<Item = SlotType>,
+        slots: impl IntoIterator<Item = S>,
+        containers: impl IntoIterator<Item = impl Into<ContainerRef>>,
+    ) -> Region
+    where
+        S: Slot + 'static,
+    {
+        self.place_boxed_slots(
+            rect,
+            slots
+                .into_iter()
+                .map(|slot| Box::new(slot) as Box<dyn Slot>),
+            containers,
+        )
+    }
+
+    /// Adds heterogeneous or already-erased slots over `rect` in row-major order.
+    ///
+    /// # Panics
+    /// If the slot count differs from the rect's cell count, or on the overlap/bounds conditions of [`place`](Self::place).
+    pub fn place_boxed_slots(
+        &mut self,
+        rect: Rect,
+        slots: impl IntoIterator<Item = Box<dyn Slot>>,
         containers: impl IntoIterator<Item = impl Into<ContainerRef>>,
     ) -> Region {
-        let slots: Vec<Option<SlotType>> = slots.into_iter().map(Some).collect();
+        let slots: Vec<Option<Box<dyn Slot>>> = slots.into_iter().map(Some).collect();
         let abs = self.to_abs(rect);
         assert!(
             slots.len() == abs.area(),
@@ -1025,7 +1049,7 @@ impl MenuBuilder {
                     let container = filler
                         .as_ref()
                         .expect("filler exists when cells are painted");
-                    self.push_slot(SectionKind::Display.make(container, filler_next));
+                    self.push_boxed_slot(SectionKind::Display.make(container, filler_next));
                     filler_next += 1;
                 }
                 Cell::Functional(placement) => {
@@ -1038,19 +1062,16 @@ impl MenuBuilder {
                         } => {
                             let slot =
                                 kind.make(container, mapping.resolve(rect.local_index(x, y)));
-                            self.push_slot(slot);
+                            self.push_boxed_slot(slot);
                         }
                         PlacementKind::Result { handler, container } => {
-                            self.push_slot(SlotType::Result(ResultSlot::new(
-                                handler.clone(),
-                                container.clone(),
-                            )));
+                            self.push_slot(ResultSlot::new(handler.clone(), container.clone()));
                         }
                         PlacementKind::Slots { slots, .. } => {
                             let slot = slots[rect.local_index(x, y)]
                                 .take()
                                 .expect("each grid cell maps to exactly one slot");
-                            self.push_slot(slot);
+                            self.push_boxed_slot(slot);
                         }
                     }
                 }
@@ -1079,7 +1100,7 @@ impl MenuBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::inventory::slots::{NormalSlot, Slot as _};
+    use crate::inventory::slots::NormalSlot;
     use steel_utils::locks::IntoShared;
 
     fn container(size: usize) -> ContainerRef {
@@ -1115,9 +1136,7 @@ mod tests {
         use crate::inventory::menu::kinds::BasicKind;
 
         let c = container(9);
-        let slots: Vec<SlotType> = (3..7)
-            .map(|i| SlotType::Normal(NormalSlot::new(c.clone(), i)))
-            .collect();
+        let slots: Vec<NormalSlot> = (3..7).map(|i| NormalSlot::new(c.clone(), i)).collect();
 
         let mut b = MenuBuilder::new(None, 0);
         let region = b.grid(1, |g| {
@@ -1186,7 +1205,7 @@ mod tests {
         use crate::inventory::menu::kinds::BasicKind;
 
         let factory = SectionKind::custom(|container, index| {
-            SlotType::Normal(NormalSlot::new(container.clone(), index))
+            Box::new(NormalSlot::new(container.clone(), index))
         });
 
         let mut b = MenuBuilder::new(None, 0);
@@ -1214,9 +1233,7 @@ mod tests {
     #[should_panic(expected = "place_slots got 3 slots")]
     fn place_slots_panics_on_count_mismatch() {
         let c = container(9);
-        let slots: Vec<SlotType> = (0..3)
-            .map(|i| SlotType::Normal(NormalSlot::new(c.clone(), i)))
-            .collect();
+        let slots: Vec<NormalSlot> = (0..3).map(|i| NormalSlot::new(c.clone(), i)).collect();
 
         let mut b = MenuBuilder::new(None, 0);
         b.grid(1, |g| {

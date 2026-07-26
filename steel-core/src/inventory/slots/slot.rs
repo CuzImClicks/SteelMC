@@ -1,20 +1,16 @@
 //! Slot abstraction for inventory access.
 
-use std::sync::Arc;
-
-use enum_dispatch::enum_dispatch;
 use steel_registry::item_stack::ItemStack;
+use steel_utils::ErasedType;
 
 use crate::inventory::lock::{ContainerId, ContainerLockGuard};
-use crate::inventory::slots::armor_slot::ArmorSlot;
-use crate::inventory::slots::normal_slot::NormalSlot;
-use crate::inventory::slots::restricted_slot::RestrictedSlot;
-use crate::inventory::slots::result_slot::ResultSlot;
 use crate::player::Player;
 
 /// A view into a single position in a container, accessed via a `ContainerLockGuard`.
-#[enum_dispatch]
-pub trait Slot {
+///
+/// Concrete implementations must implement [`steel_utils::DowncastType`] with
+/// a unique, stable key so erased slot references can recover their type.
+pub trait Slot: ErasedType + Send + Sync {
     /// Returns a reference to the item in this slot.
     fn get_item<'a>(&self, guard: &'a ContainerLockGuard) -> &'a ItemStack;
 
@@ -180,140 +176,30 @@ pub trait Slot {
     }
 }
 
-/// Forwards `Slot` through `Arc`. Every method is forwarded so inner overrides survive.
-impl<T: Slot + ?Sized> Slot for Arc<T> {
-    fn get_item<'a>(&self, guard: &'a ContainerLockGuard) -> &'a ItemStack {
-        (**self).get_item(guard)
-    }
-
-    fn get_item_mut<'a>(&self, guard: &'a mut ContainerLockGuard) -> &'a mut ItemStack {
-        (**self).get_item_mut(guard)
-    }
-
-    fn set_item(&self, guard: &mut ContainerLockGuard, stack: ItemStack) {
-        (**self).set_item(guard, stack);
-    }
-
-    fn set_by_player(
-        &self,
-        guard: &mut ContainerLockGuard,
-        stack: ItemStack,
-        previous: &ItemStack,
-    ) {
-        (**self).set_by_player(guard, stack, previous);
-    }
-
-    fn has_item(&self, guard: &ContainerLockGuard) -> bool {
-        (**self).has_item(guard)
-    }
-
-    fn may_place(&self, stack: &ItemStack) -> bool {
-        (**self).may_place(stack)
-    }
-
-    fn may_pickup(&self, guard: &ContainerLockGuard, player: &Player) -> bool {
-        (**self).may_pickup(guard, player)
-    }
-
-    fn allow_modification(&self, guard: &ContainerLockGuard, player: &Player) -> bool {
-        (**self).allow_modification(guard, player)
-    }
-
-    fn get_max_stack_size(&self, guard: &ContainerLockGuard) -> i32 {
-        (**self).get_max_stack_size(guard)
-    }
-
-    fn get_max_stack_size_for_item(&self, guard: &ContainerLockGuard, stack: &ItemStack) -> i32 {
-        (**self).get_max_stack_size_for_item(guard, stack)
-    }
-
-    fn remove(&self, guard: &mut ContainerLockGuard, amount: i32) -> ItemStack {
-        (**self).remove(guard, amount)
-    }
-
-    fn try_remove(
-        &self,
-        guard: &mut ContainerLockGuard,
-        amount: i32,
-        max_amount: i32,
-        player: &Player,
-    ) -> Option<ItemStack> {
-        (**self).try_remove(guard, amount, max_amount, player)
-    }
-
-    fn on_take(
-        &self,
-        guard: &mut ContainerLockGuard,
-        stack: &ItemStack,
-        player: &Player,
-    ) -> Option<ItemStack> {
-        (**self).on_take(guard, stack, player)
-    }
-
-    fn safe_take(
-        &self,
-        guard: &mut ContainerLockGuard,
-        amount: i32,
-        max_amount: i32,
-        player: &Player,
-    ) -> ItemStack {
-        (**self).safe_take(guard, amount, max_amount, player)
-    }
-
-    fn safe_insert(
-        &self,
-        guard: &mut ContainerLockGuard,
-        input: ItemStack,
-        amount: i32,
-    ) -> ItemStack {
-        (**self).safe_insert(guard, input, amount)
-    }
-
-    fn set_changed(&self, guard: &mut ContainerLockGuard) {
-        (**self).set_changed(guard);
-    }
-
-    fn get_container_slot(&self) -> usize {
-        (**self).get_container_slot()
-    }
-
-    fn container_key(&self) -> Option<(ContainerId, usize)> {
-        (**self).container_key()
-    }
-
-    fn is_fake(&self) -> bool {
-        (**self).is_fake()
-    }
-}
-
-/// Enum of all slot types that implement the Slot trait.
-#[enum_dispatch(Slot)]
-pub enum SlotType {
-    /// Normal inventory slot with no restrictions.
-    Normal(NormalSlot),
-    /// Armor slot that only accepts armor items.
-    Armor(ArmorSlot),
-    /// Result slot (fake, doesn't persist items).
-    Result(ResultSlot),
-    /// Slot whose place/pickup rules come from closures.
-    Restricted(RestrictedSlot),
-    /// Custom implementations by Plugins
-    Custom(Arc<dyn Slot + Send + Sync>),
-}
-
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
 
     use steel_registry::{test_support::init_test_registry, vanilla_items};
     use steel_utils::locks::IntoShared;
+    use steel_utils::{Downcast as _, DowncastType, DowncastTypeKey};
 
     use super::*;
+    use crate::inventory::slots::normal_slot::NormalSlot;
     use crate::inventory::{container::SimpleContainer, lock::ContainerRef};
 
     struct SafeInsertOverrideSlot {
         base: NormalSlot,
         called: Arc<AtomicBool>,
+    }
+
+    // SAFETY: This test-only key uniquely identifies `SafeInsertOverrideSlot`.
+    unsafe impl DowncastType for SafeInsertOverrideSlot {
+        const TYPE_KEY: DowncastTypeKey =
+            DowncastTypeKey::new("steel:test/slot/safe_insert_override");
     }
 
     impl Slot for SafeInsertOverrideSlot {
@@ -357,15 +243,16 @@ mod tests {
     }
 
     #[test]
-    fn custom_slot_safe_insert_override_survives_arc_erasure() {
+    fn custom_slot_safe_insert_override_survives_erasure() {
         init_test_registry();
         let container = SimpleContainer::new(1).into_shared();
         let container_ref = ContainerRef::from(Arc::clone(&container));
         let called = Arc::new(AtomicBool::new(false));
-        let slot = SlotType::Custom(Arc::new(SafeInsertOverrideSlot {
+        let slot: Box<dyn Slot> = Box::new(SafeInsertOverrideSlot {
             base: NormalSlot::new(container_ref.clone(), 0),
             called: Arc::clone(&called),
-        }));
+        });
+        assert!(slot.downcast_ref::<SafeInsertOverrideSlot>().is_some());
         let mut guard = ContainerLockGuard::lock_all(&[container_ref]);
 
         let remaining = slot.safe_insert(&mut guard, ItemStack::new(&vanilla_items::STONE), 1);

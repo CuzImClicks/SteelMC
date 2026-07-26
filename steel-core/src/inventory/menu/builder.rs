@@ -38,11 +38,11 @@ use steel_utils::locks::Shared;
 
 use crate::inventory::menu::Menu;
 use crate::inventory::menu::behavior::MenuBehavior;
-use crate::inventory::menu::kind::MenuKindType;
+use crate::inventory::menu::kind::MenuKind;
 use crate::inventory::menu::layout::MenuLayout;
 use crate::inventory::{
     lock::{ContainerId, ContainerLockGuard, ContainerRef},
-    slots::{NormalSlot, RestrictedRules, RestrictedSlot, ResultHandler, ResultSlot, SlotType},
+    slots::{NormalSlot, RestrictedRules, RestrictedSlot, ResultHandler, ResultSlot, Slot},
 };
 use crate::player::Player;
 use crate::player::player_inventory::PlayerInventory;
@@ -294,7 +294,7 @@ impl SectionSource for &mut ContainerSlots {
 }
 
 /// Produces the slot for one container index of a section.
-pub type SlotFactory = Arc<dyn Fn(&ContainerRef, usize) -> SlotType + Send + Sync>;
+pub type SlotFactory = Arc<dyn Fn(&ContainerRef, usize) -> Box<dyn Slot> + Send + Sync>;
 
 /// How a section lowers container indices into menu slots.
 ///
@@ -342,7 +342,7 @@ impl SectionKind {
     /// Slots produced by `factory` from the section's container and each
     /// covered container index.
     pub fn custom(
-        factory: impl Fn(&ContainerRef, usize) -> SlotType + Send + Sync + 'static,
+        factory: impl Fn(&ContainerRef, usize) -> Box<dyn Slot> + Send + Sync + 'static,
     ) -> Self {
         Self::Custom(Arc::new(factory))
     }
@@ -354,15 +354,15 @@ impl SectionKind {
         Self::Restricted(deny_place_rules())
     }
 
-    pub(crate) fn make(&self, container: &ContainerRef, index: usize) -> SlotType {
+    pub(crate) fn make(&self, container: &ContainerRef, index: usize) -> Box<dyn Slot> {
         match self {
-            Self::Normal => SlotType::Normal(NormalSlot::new(container.clone(), index)),
-            Self::Restricted(rules) => SlotType::Restricted(RestrictedSlot::with_rules(
+            Self::Normal => Box::new(NormalSlot::new(container.clone(), index)),
+            Self::Restricted(rules) => Box::new(RestrictedSlot::with_rules(
                 container.clone(),
                 index,
                 Arc::clone(rules),
             )),
-            Self::Display => SlotType::Restricted(RestrictedSlot::with_rules(
+            Self::Display => Box::new(RestrictedSlot::with_rules(
                 container.clone(),
                 index,
                 deny_all_rules(),
@@ -440,7 +440,7 @@ pub struct MenuBuilder {
     menu_type: Option<MenuTypeRef>,
     container_id: u8,
     overrides_player_slots: bool,
-    slots: Vec<SlotType>,
+    slots: Vec<Box<dyn Slot>>,
     container_refs: Vec<ContainerRef>,
     data_slots: Vec<i16>,
     routes: Vec<Route>,
@@ -688,10 +688,8 @@ impl MenuBuilder {
     pub fn result_slot(&mut self, handler: impl ResultHandler + 'static) -> Section {
         let container = handler.result_container();
         let start = self.slots.len();
-        self.slots.push(SlotType::Result(ResultSlot::new(
-            handler,
-            container.clone(),
-        )));
+        self.slots
+            .push(Box::new(ResultSlot::new(handler, container.clone())));
         self.register_container(container);
         self.section_from(start)
     }
@@ -700,12 +698,34 @@ impl MenuBuilder {
     /// model aliased slots (two menu slots over one container index) the way
     /// [`player_inventory_with`](Self::player_inventory_with) can produce them.
     ///
+    /// All slots produced by the iterator have the same concrete type. Use
+    /// [`custom_boxed_section`](Self::custom_boxed_section) for a heterogeneous
+    /// or already-erased collection.
+    ///
     /// Production menus go through [`section_at`](Self::section_at) or a
     /// [`SectionKind::custom`] factory instead, which keep overlap validation.
     #[cfg(test)]
-    pub(crate) fn custom_section(
+    pub(crate) fn custom_section<S>(
         &mut self,
-        slots: impl IntoIterator<Item = SlotType>,
+        slots: impl IntoIterator<Item = S>,
+        containers: impl IntoIterator<Item = impl Into<ContainerRef>>,
+    ) -> Section
+    where
+        S: Slot + 'static,
+    {
+        self.custom_boxed_section(
+            slots
+                .into_iter()
+                .map(|slot| Box::new(slot) as Box<dyn Slot>),
+            containers,
+        )
+    }
+
+    /// Adds heterogeneous or already-erased slots.
+    #[cfg(test)]
+    pub(crate) fn custom_boxed_section(
+        &mut self,
+        slots: impl IntoIterator<Item = Box<dyn Slot>>,
         containers: impl IntoIterator<Item = impl Into<ContainerRef>>,
     ) -> Section {
         let start = self.slots.len();
@@ -844,7 +864,20 @@ impl MenuBuilder {
     /// Panics if the number of slots does not match the client layout declared
     /// by the menu type.
     #[must_use]
-    pub fn build(self, kind: impl Into<MenuKindType>) -> Menu {
+    pub fn build(self, kind: impl MenuKind + 'static) -> Menu {
+        self.build_boxed(Box::new(kind))
+    }
+
+    /// Consumes the builder using menu behavior selected at runtime.
+    ///
+    /// This is the erased counterpart to [`Self::build`] for plugin factories
+    /// and other callers that already own a boxed menu kind.
+    ///
+    /// # Panics
+    /// Panics if the number of slots does not match the client layout declared
+    /// by the menu type.
+    #[must_use]
+    pub fn build_boxed(self, kind: Box<dyn MenuKind>) -> Menu {
         if let Some(menu_type) = self.menu_type {
             assert_eq!(
                 self.slots.len(),
@@ -871,7 +904,7 @@ impl MenuBuilder {
             routes: self.routes,
             drain_sections: self.drain_sections,
         };
-        Menu::from_parts(behavior, layout, kind.into(), self.overrides_player_slots)
+        Menu::from_parts(behavior, layout, kind, self.overrides_player_slots)
     }
 
     /// The identity of the menu being built.
@@ -885,8 +918,13 @@ impl MenuBuilder {
         self.slots.len()
     }
 
-    /// Appends a single slot without creating a section.
-    pub(crate) fn push_slot(&mut self, slot: SlotType) {
+    /// Appends a single concrete slot without creating a section.
+    pub(crate) fn push_slot(&mut self, slot: impl Slot + 'static) {
+        self.push_boxed_slot(Box::new(slot));
+    }
+
+    /// Appends a single already-erased slot without creating a section.
+    pub(crate) fn push_boxed_slot(&mut self, slot: Box<dyn Slot>) {
         self.slots.push(slot);
     }
 
@@ -946,12 +984,11 @@ impl MenuBuilder {
 #[cfg(test)]
 mod tests {
     use steel_registry::{test_support::init_test_registry, vanilla_items, vanilla_menu_types};
-    use steel_utils::locks::IntoShared;
+    use steel_utils::{Downcast as _, locks::IntoShared};
 
     use super::*;
     use crate::inventory::container::SimpleContainer;
     use crate::inventory::menu::kinds::BasicKind;
-    use crate::inventory::slots::Slot;
 
     #[test]
     #[should_panic(
@@ -959,6 +996,14 @@ mod tests {
     )]
     fn build_rejects_a_slot_count_that_disagrees_with_the_menu_type() {
         let _ = MenuBuilder::new(&vanilla_menu_types::GENERIC_9X6, 1).build(BasicKind);
+    }
+
+    #[test]
+    fn builds_with_an_erased_menu_kind() {
+        let kind: Box<dyn MenuKind> = Box::new(BasicKind);
+        let menu = MenuBuilder::new(None, 0).build_boxed(kind);
+
+        assert!(menu.kind().downcast_ref::<BasicKind>().is_some());
     }
 
     #[test]
@@ -994,7 +1039,7 @@ mod tests {
             .behavior()
             .slots()
             .iter()
-            .map(Slot::get_container_slot)
+            .map(|slot| slot.get_container_slot())
             .collect();
         assert_eq!(container_slots, vec![4, 3, 0, 1]);
     }
@@ -1032,7 +1077,7 @@ mod tests {
     fn custom_kind_lowers_through_the_factory() {
         let container = ContainerRef::from(SimpleContainer::new(3).into_shared());
         let factory = SectionKind::custom(|container, index| {
-            SlotType::Normal(NormalSlot::new(container.clone(), index))
+            Box::new(NormalSlot::new(container.clone(), index))
         });
         let mut b = MenuBuilder::new(None, 0);
         let _ = b.section_at(container, [2, 0], factory);
@@ -1042,7 +1087,7 @@ mod tests {
             .behavior()
             .slots()
             .iter()
-            .map(Slot::get_container_slot)
+            .map(|slot| slot.get_container_slot())
             .collect();
         assert_eq!(container_slots, vec![2, 0]);
     }

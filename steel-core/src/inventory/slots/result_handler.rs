@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use enum_dispatch::enum_dispatch;
 use steel_registry::item_stack::ItemStack;
 
 use crate::{
@@ -9,7 +8,6 @@ use crate::{
 };
 
 /// A trait for recipe handlers that update slots in containers according to recipes
-#[enum_dispatch]
 pub trait ResultHandler: Send + Sync {
     /// The container the result is written to and read from.
     ///

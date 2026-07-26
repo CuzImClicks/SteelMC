@@ -23,9 +23,7 @@ use crate::{
     inventory::{
         container::{Container as _, SimpleContainer},
         menu::kinds::BasicKind,
-        prelude::{
-            Click, DragKind, MenuBuilder, MenuKindType, MouseButton, QuickCraft, SectionKind,
-        },
+        prelude::{Click, DragKind, MenuBuilder, MouseButton, QuickCraft, SectionKind},
     },
     permission::{PermissionEntry, PermissionMetadataSet, PermissionSet},
     player::{PlayerConnection, player_inventory::PlayerInventory},
@@ -511,7 +509,7 @@ fn overriding_menu_defers_main_inventory_sync_until_close() {
             let mut builder = MenuBuilder::new(&vanilla_menu_types::GENERIC_9X4, container_id);
             builder.section_with(fake_slots, 72, SectionKind::Display);
             builder.overrides_player_slots();
-            builder.build(MenuKindType::Basic(BasicKind {}))
+            builder.build(BasicKind {})
         });
     recording.packets.lock().clear();
     recording.player.request_inventory_resync([0, 39]);
@@ -553,7 +551,7 @@ fn replacing_overriding_menu_keeps_main_inventory_sync_deferred() {
                 let mut builder = MenuBuilder::new(&vanilla_menu_types::GENERIC_9X4, container_id);
                 builder.section_with(fake_slots, 72, SectionKind::Display);
                 builder.overrides_player_slots();
-                builder.build(MenuKindType::Basic(BasicKind {}))
+                builder.build(BasicKind {})
             });
         recording.player.request_inventory_resync([0]);
     }
@@ -587,7 +585,7 @@ fn normal_menu_does_not_defer_main_inventory_sync() {
             let mut builder = MenuBuilder::new(&vanilla_menu_types::GENERIC_9X1, container_id);
             builder.section_with(menu_slots, 9, SectionKind::Display);
             builder.player_inventory(&inventory);
-            builder.build(MenuKindType::Basic(BasicKind {}))
+            builder.build(BasicKind {})
         });
     recording.packets.lock().clear();
     recording.player.request_inventory_resync([0]);

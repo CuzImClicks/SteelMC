@@ -8,6 +8,7 @@ use steel_protocol::packets::game::{
 };
 use steel_registry::item_stack::ItemStack;
 use steel_utils::{
+    Downcast as _,
     locks::Shared,
     types::{GameType, InteractionHand},
 };
@@ -19,8 +20,11 @@ use crate::{
         click::Click,
         container::{Container, CraftingContainer, clear_or_count_matching_stack},
         lock::{ContainerId, ContainerLockGuard},
-        menu::{Menu, MenuKindType, kinds::INVENTORY_MENU_CONTAINER_ID},
-        slots::{CraftingHandler, Slot},
+        menu::{
+            Menu,
+            kinds::{INVENTORY_MENU_CONTAINER_ID, InventoryKind},
+        },
+        slots::CraftingHandler,
     },
     player::{Player, connection::NetworkConnection as _},
     world::World,
@@ -266,7 +270,12 @@ impl Player {
             // our view of what it knows, or `broadcast_changes` will think the
             // client already has the freshly-crafted result and skip syncing it
             // — leaving the slot blank until the next click forces a resend.
-            if menu.behavior().slots().get(slot).is_some_and(Slot::is_fake) {
+            if menu
+                .behavior()
+                .slots()
+                .get(slot)
+                .is_some_and(|slot| slot.is_fake())
+            {
                 menu.behavior_mut().mark_remote_slot_unknown(slot);
                 continue;
             }
@@ -543,7 +552,7 @@ impl Player {
     /// menu.
     pub fn crafting_container(&self) -> Shared<CraftingContainer> {
         let menu = self.inventory_menu.lock();
-        let MenuKindType::Inventory(kind) = menu.kind() else {
+        let Some(kind) = menu.kind().downcast_ref::<InventoryKind>() else {
             unreachable!("a player's inventory_menu is always the Inventory kind");
         };
         kind.crafting_container()
@@ -553,7 +562,7 @@ impl Player {
     /// menu and its result.
     pub(crate) fn inventory_crafting_handler(&self) -> CraftingHandler {
         let menu = self.inventory_menu.lock();
-        let MenuKindType::Inventory(kind) = menu.kind() else {
+        let Some(kind) = menu.kind().downcast_ref::<InventoryKind>() else {
             unreachable!("a player's inventory_menu is always the Inventory kind");
         };
         kind.crafting_handler()
