@@ -1129,12 +1129,7 @@ mod tests {
         builder.custom_section(
             [
                 SlotType::Normal(NormalSlot::new(container_ref.clone(), 0)),
-                SlotType::Restricted(RestrictedSlot::new(
-                    container_ref.clone(),
-                    0,
-                    Arc::new(|_, _| true),
-                    None,
-                )),
+                SlotType::Restricted(RestrictedSlot::new(container_ref.clone(), 0, |_, _| true)),
                 SlotType::Normal(NormalSlot::new(container_ref.clone(), 1)),
             ],
             [container_ref.clone()],

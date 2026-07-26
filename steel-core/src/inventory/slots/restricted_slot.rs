@@ -10,31 +10,83 @@ use crate::{
     player::Player,
 };
 
-/// Predicate deciding whether an item may be placed into a [`RestrictedSlot`].
-pub type MayPlaceFn = Arc<dyn Fn(usize, &ItemStack) -> bool + Send + Sync>;
-/// Predicate gating pickup from a [`RestrictedSlot`].
-pub type MayPickupFn =
-    Arc<dyn Fn(usize, &ContainerLockGuard, &Player, &ItemStack) -> bool + Send + Sync>;
+type MayPlace = Box<dyn Fn(usize, &ItemStack) -> bool + Send + Sync>;
+type MayPickup = Box<dyn Fn(usize, &ContainerLockGuard, &Player, &ItemStack) -> bool + Send + Sync>;
+
+/// The predicates behind a [`RestrictedSlot`], shared by every slot of a
+/// section so a slot costs one pointer rather than one per predicate.
+pub struct RestrictedRules {
+    may_place: MayPlace,
+    may_pickup: Option<MayPickup>,
+}
+
+impl RestrictedRules {
+    pub(crate) fn place_only(
+        may_place: impl Fn(usize, &ItemStack) -> bool + Send + Sync + 'static,
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            may_place: Box::new(may_place),
+            may_pickup: None,
+        })
+    }
+
+    pub(crate) fn guarded(
+        may_place: impl Fn(usize, &ItemStack) -> bool + Send + Sync + 'static,
+        may_pickup: impl Fn(usize, &ContainerLockGuard, &Player, &ItemStack) -> bool
+        + Send
+        + Sync
+        + 'static,
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            may_place: Box::new(may_place),
+            may_pickup: Some(Box::new(may_pickup)),
+        })
+    }
+}
 
 /// A [`NormalSlot`] with custom place and pickup rules.
 pub struct RestrictedSlot {
     base: NormalSlot,
-    may_place_fn: MayPlaceFn,
-    may_pickup_fn: Option<MayPickupFn>,
+    rules: Arc<RestrictedRules>,
 }
 
 impl RestrictedSlot {
-    /// Creates a restricted slot. `None` pickup fn always allows pickup.
+    /// Placement gated by `may_place`, which receives the container-local slot
+    /// index; pickup stays allowed.
     pub fn new(
         container: impl Into<ContainerRef>,
         index: usize,
-        may_place_fn: MayPlaceFn,
-        may_pickup_fn: Option<MayPickupFn>,
+        may_place: impl Fn(usize, &ItemStack) -> bool + Send + Sync + 'static,
+    ) -> Self {
+        Self::with_rules(container, index, RestrictedRules::place_only(may_place))
+    }
+
+    /// Like [`new`](Self::new), but pickup is gated too.
+    pub fn guarded(
+        container: impl Into<ContainerRef>,
+        index: usize,
+        may_place: impl Fn(usize, &ItemStack) -> bool + Send + Sync + 'static,
+        may_pickup: impl Fn(usize, &ContainerLockGuard, &Player, &ItemStack) -> bool
+        + Send
+        + Sync
+        + 'static,
+    ) -> Self {
+        Self::with_rules(
+            container,
+            index,
+            RestrictedRules::guarded(may_place, may_pickup),
+        )
+    }
+
+    /// Shares one rules object across a whole section's slots.
+    pub(crate) fn with_rules(
+        container: impl Into<ContainerRef>,
+        index: usize,
+        rules: Arc<RestrictedRules>,
     ) -> Self {
         Self {
             base: NormalSlot::new(container, index),
-            may_place_fn,
-            may_pickup_fn,
+            rules,
         }
     }
 }
@@ -53,11 +105,11 @@ impl Slot for RestrictedSlot {
     }
 
     fn may_place(&self, stack: &ItemStack) -> bool {
-        (self.may_place_fn)(self.base.get_container_slot(), stack)
+        (self.rules.may_place)(self.base.get_container_slot(), stack)
     }
 
     fn may_pickup(&self, guard: &ContainerLockGuard, player: &Player) -> bool {
-        (self.may_pickup_fn).as_ref().is_none_or(|it| {
+        self.rules.may_pickup.as_ref().is_none_or(|it| {
             it(
                 self.base.get_container_slot(),
                 guard,
@@ -134,7 +186,7 @@ mod tests {
             max_stack_size: 1,
         }));
         let capped_ref = ContainerRef::from(capped);
-        let capped_slot = RestrictedSlot::new(capped_ref.clone(), 0, Arc::new(|_, _| true), None);
+        let capped_slot = RestrictedSlot::new(capped_ref.clone(), 0, |_, _| true);
         let mut capped_guard = ContainerLockGuard::lock_all(&[capped_ref]);
         let capped_remainder = capped_slot.safe_insert(
             &mut capped_guard,
@@ -146,7 +198,7 @@ mod tests {
 
         let default = SimpleContainer::new(1).into_shared();
         let default_ref = ContainerRef::from(default);
-        let default_slot = RestrictedSlot::new(default_ref.clone(), 0, Arc::new(|_, _| true), None);
+        let default_slot = RestrictedSlot::new(default_ref.clone(), 0, |_, _| true);
         let mut default_guard = ContainerLockGuard::lock_all(&[default_ref]);
         let mut stack = ItemStack::new(&vanilla_items::STONE);
         stack.set(MAX_STACK_SIZE, 99);

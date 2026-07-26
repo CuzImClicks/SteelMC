@@ -42,9 +42,7 @@ use crate::inventory::menu::kind::MenuKindType;
 use crate::inventory::menu::layout::MenuLayout;
 use crate::inventory::{
     lock::{ContainerId, ContainerLockGuard, ContainerRef},
-    slots::{
-        MayPickupFn, MayPlaceFn, NormalSlot, RestrictedSlot, ResultHandler, ResultSlot, SlotType,
-    },
+    slots::{NormalSlot, RestrictedRules, RestrictedSlot, ResultHandler, ResultSlot, SlotType},
 };
 use crate::player::Player;
 use crate::player::player_inventory::PlayerInventory;
@@ -309,10 +307,10 @@ pub type SlotFactory = Arc<dyn Fn(&ContainerRef, usize) -> SlotType + Send + Syn
 pub enum SectionKind {
     /// Plain storage slots.
     Normal,
-    /// Placement gated by the closure; pickup stays allowed.
-    Restricted(MayPlaceFn),
-    /// Placement and pickup both gated.
-    Guarded(MayPlaceFn, MayPickupFn),
+    /// Placement gated by the rules; pickup gated too when they carry a pickup
+    /// predicate. Built by [`restricted`](Self::restricted),
+    /// [`guarded`](Self::guarded) and [`take_only`](Self::take_only).
+    Restricted(Arc<RestrictedRules>),
     /// No placement, no pickup; clicks are rejected and surface in
     /// `MenuKind::on_slot_clicked`.
     Display,
@@ -326,7 +324,7 @@ impl SectionKind {
     pub fn restricted(
         may_place: impl Fn(usize, &ItemStack) -> bool + Send + Sync + 'static,
     ) -> Self {
-        Self::Restricted(Arc::new(may_place))
+        Self::Restricted(RestrictedRules::place_only(may_place))
     }
 
     /// Like [`restricted`](Self::restricted), but pickup is also gated: items
@@ -338,7 +336,7 @@ impl SectionKind {
         + Sync
         + 'static,
     ) -> Self {
-        Self::Guarded(Arc::new(may_place), Arc::new(may_pickup))
+        Self::Restricted(RestrictedRules::guarded(may_place, may_pickup))
     }
 
     /// Slots produced by `factory` from the section's container and each
@@ -353,29 +351,21 @@ impl SectionKind {
     /// slots.
     #[must_use]
     pub fn take_only() -> Self {
-        Self::Restricted(deny_place())
+        Self::Restricted(deny_place_rules())
     }
 
     pub(crate) fn make(&self, container: &ContainerRef, index: usize) -> SlotType {
         match self {
             Self::Normal => SlotType::Normal(NormalSlot::new(container.clone(), index)),
-            Self::Restricted(may_place) => SlotType::Restricted(RestrictedSlot::new(
+            Self::Restricted(rules) => SlotType::Restricted(RestrictedSlot::with_rules(
                 container.clone(),
                 index,
-                may_place.clone(),
-                None,
+                Arc::clone(rules),
             )),
-            Self::Guarded(may_place, may_pickup) => SlotType::Restricted(RestrictedSlot::new(
+            Self::Display => SlotType::Restricted(RestrictedSlot::with_rules(
                 container.clone(),
                 index,
-                may_place.clone(),
-                Some(may_pickup.clone()),
-            )),
-            Self::Display => SlotType::Restricted(RestrictedSlot::new(
-                container.clone(),
-                index,
-                deny_place(),
-                Some(deny_pickup()),
+                deny_all_rules(),
             )),
             Self::Custom(factory) => factory(container, index),
         }
@@ -387,7 +377,6 @@ impl fmt::Debug for SectionKind {
         f.write_str(match self {
             Self::Normal => "SectionKind::Normal",
             Self::Restricted(_) => "SectionKind::Restricted(..)",
-            Self::Guarded(..) => "SectionKind::Guarded(..)",
             Self::Display => "SectionKind::Display",
             Self::Custom(_) => "SectionKind::Custom(..)",
         })
@@ -400,16 +389,18 @@ impl From<&Self> for SectionKind {
     }
 }
 
-/// A `may_place` that rejects everything, shared process-wide.
-pub(crate) fn deny_place() -> MayPlaceFn {
-    static DENY: OnceLock<MayPlaceFn> = OnceLock::new();
-    DENY.get_or_init(|| Arc::new(|_, _| false)).clone()
+/// Rules that reject placement and allow pickup, shared process-wide.
+fn deny_place_rules() -> Arc<RestrictedRules> {
+    static DENY: OnceLock<Arc<RestrictedRules>> = OnceLock::new();
+    DENY.get_or_init(|| RestrictedRules::place_only(|_, _| false))
+        .clone()
 }
 
-/// A `may_pickup` that rejects everything, shared process-wide.
-pub(crate) fn deny_pickup() -> MayPickupFn {
-    static DENY: OnceLock<MayPickupFn> = OnceLock::new();
-    DENY.get_or_init(|| Arc::new(|_, _, _, _| false)).clone()
+/// Rules that reject both placement and pickup, shared process-wide.
+fn deny_all_rules() -> Arc<RestrictedRules> {
+    static DENY: OnceLock<Arc<RestrictedRules>> = OnceLock::new();
+    DENY.get_or_init(|| RestrictedRules::guarded(|_, _| false, |_, _, _, _| false))
+        .clone()
 }
 
 /// The direction in which a slot range is walked when distributing items.
