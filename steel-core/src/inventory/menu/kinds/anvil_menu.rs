@@ -327,9 +327,7 @@ impl AnvilKind {
             if rename_cost != additional_cost as i32 || rename_cost == 0 {
                 final_repair_cost = Self::calculate_increased_repair_cost(final_repair_cost);
             }
-            if final_repair_cost > 0 {
-                result.set(REPAIR_COST, final_repair_cost);
-            }
+            result.set(REPAIR_COST, final_repair_cost);
             let enchantments: Vec<(Identifier, u32)> =
                 enchantments.iter().map(|(k, v)| (k.clone(), *v)).collect();
             result.set_enchantments(&enchantments, false);
