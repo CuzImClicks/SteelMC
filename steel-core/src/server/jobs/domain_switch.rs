@@ -10,8 +10,8 @@ use crate::{
     chunk::chunk_request::ChunkRequestState,
     entity::{Entity, PendingWorldChangeToken},
     player::{
-        Player, ResetReason, connection::NetworkConnection, player_data::PersistentPlayerData,
-        player_data_storage::GlobalPlayerData,
+        DomainResidenceToken, Player, ResetReason, connection::NetworkConnection,
+        player_data::PersistentPlayerData, player_data_storage::GlobalPlayerData,
     },
     server::{
         DomainPlayerData, DomainPlayerState, PreparedSpawn, Server, UnpreparedDomainPlayerData,
@@ -34,6 +34,7 @@ pub(in crate::server) struct DomainSwitchJob {
     source_data: Option<Arc<PersistentPlayerData>>,
     target_domain: String,
     pending_token: PendingWorldChangeToken,
+    residence_token: DomainResidenceToken,
     phase: DomainSwitchJobPhase,
 }
 
@@ -59,6 +60,10 @@ enum DomainSwitchJobPhase {
 }
 
 impl DomainSwitchJob {
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the constructor makes all detached transition data and both ownership tokens explicit"
+    )]
     pub(in crate::server) fn new(
         server: &Arc<Server>,
         player: Arc<Player>,
@@ -67,6 +72,7 @@ impl DomainSwitchJob {
         target_domain: String,
         target_world: Option<Arc<World>>,
         pending_token: PendingWorldChangeToken,
+        residence_token: DomainResidenceToken,
     ) -> Self {
         let (sender, receiver) = mpsc::channel();
         let task_server = Arc::clone(server);
@@ -105,6 +111,7 @@ impl DomainSwitchJob {
             source_data: Some(source_data),
             target_domain,
             pending_token,
+            residence_token,
             phase: DomainSwitchJobPhase::WaitingForStorage { receiver, task },
         }
     }
@@ -224,6 +231,14 @@ impl DomainSwitchJob {
     fn commit_target_state(&mut self, server: &Arc<Server>, state: DomainPlayerState) -> JobPoll {
         if !self
             .player
+            .is_domain_residence_current(self.residence_token)
+        {
+            return self.finish_source_disconnect(Some(
+                "domain switch lost its residence before target synchronization",
+            ));
+        }
+        if !self
+            .player
             .mark_domain_switch_target_handshake(self.pending_token)
         {
             return self.finish_source_disconnect(Some(
@@ -231,11 +246,17 @@ impl DomainSwitchJob {
             ));
         }
 
+        let restores = server.prepare_domain_restores(&self.player, &state);
         let restore_player = Arc::clone(&self.player);
         self.player
             .reset_after_detached_domain_restore(Arc::clone(&state.world), || {
                 Server::apply_domain_player_state(&restore_player, &state);
             });
+        if !Server::install_domain_restores(&self.player, self.residence_token, &restores) {
+            return self.finish_source_disconnect(Some(
+                "domain switch lost its residence before target restore installation",
+            ));
+        }
         let pos = self.player.position();
         let rotation = self.player.rotation();
         if !self.player.spawn(pos, rotation, ResetReason::WorldChange) {
@@ -270,8 +291,7 @@ impl DomainSwitchJob {
             server.queue_player_disconnect(Arc::clone(&self.player));
             return JobPoll::Finished;
         }
-        server.schedule_root_vehicle_restore(&self.player, &state);
-        server.schedule_ender_pearl_restores(&self.player, &state);
+        server.schedule_domain_restores(&self.player, self.residence_token, restores);
 
         let (sender, receiver) = mpsc::channel();
         let task_server = Arc::clone(server);
@@ -308,7 +328,10 @@ impl ServerJob for DomainSwitchJob {
             && (!self.player.is_domain_switch_detached(self.pending_token)
                 || !self
                     .player
-                    .is_world_change_token_pending(self.pending_token))
+                    .is_world_change_token_pending(self.pending_token)
+                || !self
+                    .player
+                    .is_domain_residence_current(self.residence_token))
         {
             return self.finish_source_disconnect(Some(
                 "domain switch no longer owns the detached player",

@@ -156,6 +156,17 @@ impl Server {
 
         player.reset(Arc::clone(&state.world), ResetReason::InitialJoin);
         Self::apply_domain_player_state(&player, &state);
+        let residence_token = player.domain_residence_token();
+        let restores = self.prepare_domain_restores(&player, &state);
+        if !Self::install_domain_restores(&player, residence_token, &restores) {
+            tracing::error!(
+                player = %player.gameprofile.name,
+                "Initial admission lost its domain residence before restore installation"
+            );
+            player.connection.close();
+            self.remove_online_player_sync(&player);
+            return;
+        }
         let pos = player.position();
         let rotation = player.rotation();
         // The client drops a player entity spawn when it does not already know that
@@ -173,8 +184,7 @@ impl Server {
         if player.mark_joined_world() {
             player.send_inventory_to_remote();
         }
-        self.schedule_root_vehicle_restore(&player, &state);
-        self.schedule_ender_pearl_restores(&player, &state);
+        self.schedule_domain_restores(&player, residence_token, restores);
         if player.connection.closed() {
             self.queue_player_disconnect(player);
         }

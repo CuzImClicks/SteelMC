@@ -13,7 +13,7 @@ use crate::{
     player::connection::NetworkConnection,
     player::player_data::PersistentPlayerData,
     player::player_inventory::MenuRemovalStatus,
-    player::{Player, ResetReason},
+    player::{DomainResidenceToken, Player, ResetReason},
     world::World,
 };
 
@@ -211,7 +211,7 @@ impl World {
     pub(crate) fn detach_player_for_domain_switch(
         self: &Arc<Self>,
         player: &Arc<Player>,
-    ) -> Option<PersistentPlayerData> {
+    ) -> Option<(PersistentPlayerData, DomainResidenceToken)> {
         let player = self.players.remove_player_sync(player)?;
         let entity_id = player.id();
         let player_data = PersistentPlayerData::from_player(&player);
@@ -222,7 +222,8 @@ impl World {
         self.entity_tracker().on_player_leave(entity_id);
         self.player_area_map.on_player_leave(&player);
         self.chunk_map.remove_player(&player);
-        Some(player_data)
+        let residence_token = player.advance_domain_residence();
+        Some((player_data, residence_token))
     }
 
     /// Adds a player to the world.

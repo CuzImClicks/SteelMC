@@ -1,9 +1,10 @@
 use super::super::{
     Arc, BlockPos, ChunkPos, ChunkRequest, ChunkRequestHandle, ChunkRequestState, ChunkStatus,
-    ChunkStorage, ChunkTicketKind, DVec3, EntityBase, NetworkConnection, PendingWorldChangeToken,
-    PersistentEntity, PersistentRootVehicle, Player, PlayerSpawnSearch, PlayerSpawnSearchPoll,
-    RemovalReason, RespawnData, SharedEntity, Uuid, World, change_entity_world, end_gateway,
-    end_portal, is_allowed_to_enter_portal, nether_portal, vanilla_entities,
+    ChunkStorage, ChunkTicketKind, DVec3, DomainResidenceToken, EntityBase, NetworkConnection,
+    PendingWorldChangeToken, PersistentEntity, PersistentRootVehicle, Player, PlayerSpawnSearch,
+    PlayerSpawnSearchPoll, RemovalReason, RespawnData, SharedEntity, Uuid, World,
+    change_entity_world, end_gateway, end_portal, is_allowed_to_enter_portal, nether_portal,
+    vanilla_entities,
 };
 use super::{JobPoll, ServerJob, ServerJobContext};
 
@@ -13,6 +14,7 @@ pub(in crate::server) struct RootVehicleRestoreJob {
     request: ChunkRequestHandle,
     attach: [u8; 16],
     root_uuid: [u8; 16],
+    residence_token: DomainResidenceToken,
 }
 
 impl RootVehicleRestoreJob {
@@ -20,6 +22,7 @@ impl RootVehicleRestoreJob {
         player: Arc<Player>,
         world: Arc<World>,
         root_vehicle: &PersistentRootVehicle,
+        residence_token: DomainResidenceToken,
     ) -> Option<Self> {
         let root_chunk = persistent_entity_chunk(&root_vehicle.entity)?;
         let request = world.chunk_map.request_chunk(
@@ -33,6 +36,7 @@ impl RootVehicleRestoreJob {
             request,
             attach: root_vehicle.attach,
             root_uuid: root_vehicle.entity.uuid,
+            residence_token,
         })
     }
 }
@@ -40,8 +44,10 @@ impl RootVehicleRestoreJob {
 impl ServerJob for RootVehicleRestoreJob {
     fn poll(&mut self, _context: &mut ServerJobContext) -> JobPoll {
         if self.player.connection.closed()
-            || !self.player.has_joined_world()
-            || !Arc::ptr_eq(&self.player.get_world(), &self.world)
+            || !self
+                .player
+                .is_domain_residence_current(self.residence_token)
+            || !self.world.contains_player(&self.player)
         {
             return JobPoll::Finished;
         }
@@ -54,6 +60,7 @@ impl ServerJob for RootVehicleRestoreJob {
                     return JobPoll::Pending;
                 };
                 if let Some(root_vehicle) = self.player.take_matching_pending_root_vehicle(
+                    self.residence_token,
                     &self.world,
                     self.attach,
                     self.root_uuid,
@@ -689,7 +696,7 @@ pub(in crate::server) struct EnderPearlRestoreJob {
     world: Arc<World>,
     request: ChunkRequestHandle,
     uuid: Uuid,
-    entity: PersistentEntity,
+    residence_token: DomainResidenceToken,
 }
 
 impl EnderPearlRestoreJob {
@@ -697,6 +704,7 @@ impl EnderPearlRestoreJob {
         player: Arc<Player>,
         world: Arc<World>,
         entity: PersistentEntity,
+        residence_token: DomainResidenceToken,
     ) -> Option<Self> {
         let chunk = persistent_entity_chunk(&entity)?;
         let uuid = Uuid::from_bytes(entity.uuid);
@@ -710,16 +718,42 @@ impl EnderPearlRestoreJob {
             world,
             request,
             uuid,
-            entity,
+            residence_token,
         })
     }
 }
 
 impl ServerJob for EnderPearlRestoreJob {
     fn poll(&mut self, _context: &mut ServerJobContext) -> JobPoll {
-        // The pearl lives in its own world, which may differ from the player's, so
-        // only the connection (not the player's current world) gates the restore.
-        if self.player.connection.closed() {
+        // The pearl may live in another world in the same domain, so require a
+        // live same-domain owner rather than membership in the pearl's exact world.
+        if self.player.connection.closed()
+            || !self
+                .player
+                .is_domain_residence_current(self.residence_token)
+        {
+            return JobPoll::Finished;
+        }
+        let Some(server) = self.player.server.upgrade() else {
+            return JobPoll::Finished;
+        };
+        if !server.owns_online_player(&self.player) {
+            return JobPoll::Finished;
+        }
+        let Some(player_world) = server.live_world_for_player(&self.player) else {
+            // End credits temporarily detaches a connected player without ending
+            // their domain residence. Retain the payload and resume after respawn.
+            return JobPoll::Pending;
+        };
+        if player_world.domain() != self.world.domain() {
+            tracing::error!(
+                player = %self.player.gameprofile.name,
+                player_domain = player_world.domain(),
+                pearl_domain = self.world.domain(),
+                "Discarding a pending ender pearl whose owner changed domains without a new residence"
+            );
+            self.player
+                .discard_pending_ender_pearl(self.residence_token, self.uuid);
             return JobPoll::Finished;
         }
 
@@ -730,9 +764,14 @@ impl ServerJob for EnderPearlRestoreJob {
                 if self.request.ready_chunks().is_none() {
                     return JobPoll::Pending;
                 }
-                if !restore_ender_pearl_for_player(&self.player, &self.world, &self.entity) {
-                    self.player.remove_pending_ender_pearl(self.uuid);
-                }
+                let Some(pearl) = self.player.take_matching_pending_ender_pearl(
+                    self.residence_token,
+                    &self.world,
+                    self.uuid,
+                ) else {
+                    return JobPoll::Finished;
+                };
+                restore_ender_pearl_for_player(&self.player, &self.world, &pearl.entity);
                 JobPoll::Finished
             }
         }

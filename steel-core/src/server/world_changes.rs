@@ -533,7 +533,7 @@ impl Server {
         if !player.mark_domain_switch_detached(pending_token) {
             return Err("domain switch lost ownership before detaching".to_owned());
         }
-        let current_data = current_world
+        let (current_data, residence_token) = current_world
             .detach_player_for_domain_switch(&player)
             .ok_or_else(|| "player is not present in the current world".to_owned())?;
         self.jobs.spawn(DomainSwitchJob::new(
@@ -544,6 +544,7 @@ impl Server {
             target_domain,
             target_world,
             pending_token,
+            residence_token,
         ));
 
         Ok(())

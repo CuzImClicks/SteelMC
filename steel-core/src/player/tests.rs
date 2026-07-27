@@ -19,9 +19,10 @@ use steel_utils::{BlockPos, ChunkPos, Downcast as _, DowncastType, DowncastTypeK
 use uuid::Uuid;
 
 use crate::behavior::{InteractionResult, init_behaviors};
+use crate::chunk_saver::PersistentEntity;
 use crate::entity::{
-    Entity, EntitySyncedData, LivingEntity, damage::DamageSource, entities::ItemEntity,
-    next_entity_id,
+    DEFAULT_MAX_AIR_SUPPLY, Entity, EntitySyncedData, LivingEntity, damage::DamageSource,
+    entities::ItemEntity, next_entity_id,
 };
 use crate::inventory::{
     click::{Click, DragKind, QuickCraft},
@@ -31,21 +32,131 @@ use crate::inventory::{
 };
 use crate::permission::{PermissionEntry, PermissionKey, PermissionMetadataSet, PermissionSet};
 use crate::test_support::{
-    TestPlayerBuilder, fresh_test_world, hard_damage_test_world, insert_ready_full_chunk,
-    test_world,
+    TestPlayerBuilder, fresh_test_world, fresh_test_world_in_domain, hard_damage_test_world,
+    insert_ready_full_chunk, test_world,
 };
 use crate::world::World;
 
 use super::{
-    DEATH_DURATION, Player, PlayerPermissionState, ResetReason, experience::Experience,
-    experience::first_point_level_up_sound, game_mode::block_breaking::BlockBreakAction,
-    lifecycle::nullable_game_mode_id, player_data::PersistentPlayerData,
+    DEATH_DURATION, Player, PlayerPermissionState, ResetReason,
+    experience::Experience,
+    experience::first_point_level_up_sound,
+    game_mode::block_breaking::BlockBreakAction,
+    lifecycle::nullable_game_mode_id,
+    player_data::{PersistentEnderPearl, PersistentPlayerData, PersistentRootVehicle},
 };
 
 fn test_player(world: Arc<World>) -> Arc<Player> {
     let player = TestPlayerBuilder::new(world, Uuid::from_u128(1), "TestPlayer", 1).build();
     player.set_client_loaded(true);
     player
+}
+
+fn test_persistent_entity(
+    entity_type: steel_utils::Identifier,
+    uuid: [u8; 16],
+) -> PersistentEntity {
+    PersistentEntity {
+        entity_type,
+        uuid,
+        pos: [4.0, 65.0, 6.0],
+        motion: [0.0, 0.0, 0.0],
+        rotation: [0.0, 0.0],
+        fall_distance: 0.0,
+        remaining_fire_ticks: 0,
+        ticks_frozen: 0,
+        is_in_powder_snow: false,
+        was_in_powder_snow: false,
+        has_visual_fire: false,
+        on_ground: true,
+        no_gravity: false,
+        invulnerable: false,
+        air_supply: DEFAULT_MAX_AIR_SUPPLY,
+        portal_cooldown: 0,
+        custom_name_nbt: Vec::new(),
+        custom_name_visible: false,
+        silent: false,
+        glowing: false,
+        tags: Vec::new(),
+        custom_data_nbt: Vec::new(),
+        nbt_data: Vec::new(),
+        passengers: Vec::new(),
+    }
+}
+
+#[test]
+fn advancing_domain_residence_invalidates_stale_restore_owners() {
+    let source_world = fresh_test_world_in_domain("source", "spawn");
+    let target_world = fresh_test_world_in_domain("target", "spawn");
+    let player = test_player(Arc::clone(&source_world));
+    let source_token = player.domain_residence_token();
+    let root_uuid = [2; 16];
+    let pearl_uuid = [3; 16];
+    let source_root = PersistentRootVehicle {
+        attach: [4; 16],
+        entity: test_persistent_entity(vanilla_entities::MINECART.key.clone(), root_uuid),
+    };
+    let source_pearl = PersistentEnderPearl {
+        world: source_world.key.to_string(),
+        entity: test_persistent_entity(vanilla_entities::ENDER_PEARL.key.clone(), pearl_uuid),
+    };
+
+    assert!(player.install_pending_domain_restores(
+        source_token,
+        &source_world,
+        Some(source_root.clone()),
+        vec![source_pearl.clone()],
+    ));
+
+    let target_token = player.advance_domain_residence();
+    assert_ne!(source_token, target_token);
+    assert!(!player.is_domain_residence_current(source_token));
+    assert!(player.pending_root_vehicle_for_current_world().is_none());
+    assert!(player.pending_ender_pearls().is_empty());
+    assert!(
+        !player.install_pending_domain_restores(
+            source_token,
+            &source_world,
+            Some(source_root),
+            vec![source_pearl],
+        ),
+        "a delayed source job must not repopulate a later residence"
+    );
+
+    let target_pearl_uuid = [5; 16];
+    let target_pearl = PersistentEnderPearl {
+        world: target_world.key.to_string(),
+        entity: test_persistent_entity(
+            vanilla_entities::ENDER_PEARL.key.clone(),
+            target_pearl_uuid,
+        ),
+    };
+    assert!(player.install_pending_domain_restores(
+        target_token,
+        &target_world,
+        None,
+        vec![target_pearl],
+    ));
+    assert!(!player.discard_pending_ender_pearl(source_token, Uuid::from_bytes(target_pearl_uuid)));
+    assert!(
+        player
+            .take_matching_pending_ender_pearl(
+                target_token,
+                &source_world,
+                Uuid::from_bytes(target_pearl_uuid),
+            )
+            .is_none(),
+        "a restore job must claim its payload from the expected world"
+    );
+    assert!(
+        player
+            .take_matching_pending_ender_pearl(
+                target_token,
+                &target_world,
+                Uuid::from_bytes(target_pearl_uuid),
+            )
+            .is_some()
+    );
 }
 
 macro_rules! impl_test_menu_kind_downcast {

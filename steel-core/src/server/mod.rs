@@ -53,8 +53,8 @@ use crate::player::player_data::{
 use crate::player::player_data_storage::{GlobalPlayerData, PlayerDataStorage};
 use crate::player::player_inventory::MenuRemovalStatus;
 use crate::player::{
-    GameProfile, KnownPlayer, KnownPlayerNameLookup, KnownPlayers, Player, ProfileLookupError,
-    ResetReason, is_valid_player_name, lookup_online_profile, offline_uuid,
+    DomainResidenceToken, GameProfile, KnownPlayer, KnownPlayerNameLookup, KnownPlayers, Player,
+    ProfileLookupError, ResetReason, is_valid_player_name, lookup_online_profile, offline_uuid,
 };
 use crate::portal::{
     PortalKind, TeleportPostTransition, TeleportTransition, WorldChangeRequest, end_gateway,
