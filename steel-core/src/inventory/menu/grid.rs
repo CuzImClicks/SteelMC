@@ -40,7 +40,6 @@ use std::fmt;
 use std::iter::Copied;
 use std::ops::{Range, RangeFrom, RangeFull, RangeInclusive, RangeTo, RangeToInclusive};
 use std::slice;
-use std::sync::Arc;
 
 use steel_registry::item_stack::ItemStack;
 use steel_utils::locks::IntoShared;
@@ -357,7 +356,7 @@ enum PlacementKind {
     },
     /// A single fake result slot driven by a handler.
     Result {
-        handler: Arc<dyn ResultHandler + Send + Sync>,
+        slot: Option<ResultSlot>,
         container: ContainerRef,
     },
     /// Cell `(x, y)` takes `slots[rect.local_index(x, y)]`, each `Some` until flushed.
@@ -537,9 +536,17 @@ impl PlacementBuilder<'_, '_> {
     /// Commits a single fake result slot driven by `handler`, ignoring `start_at` and guards.
     ///
     /// # Panics
-    /// If the rect is not a single cell.
+    /// If the rect is not a single cell, or the placement container differs
+    /// from [`ResultHandler::result_container`].
     pub fn result(self, handler: impl ResultHandler + 'static) -> Section {
-        self.grid.place_result(self.rect, handler, self.container)
+        let slot = ResultSlot::new(handler);
+        let result_container = slot.result_container().clone();
+        assert_eq!(
+            self.container.container_id(),
+            result_container.container_id(),
+            "result placement container must match ResultHandler::result_container"
+        );
+        self.grid.place_result(self.rect, slot, result_container)
     }
 }
 
@@ -678,12 +685,7 @@ impl<'a> GridPlacer<'a> {
 
     /// # Panics
     /// If the rect is not a single cell, or on the overlap/bounds conditions of a placement.
-    fn place_result(
-        &mut self,
-        at: Rect,
-        handler: impl ResultHandler + 'static,
-        container: ContainerRef,
-    ) -> Section {
+    fn place_result(&mut self, at: Rect, slot: ResultSlot, container: ContainerRef) -> Section {
         let abs = self.to_abs(at);
         assert!(
             abs.area() == 1,
@@ -694,7 +696,7 @@ impl<'a> GridPlacer<'a> {
         let region = self.claim_functional(
             at,
             PlacementKind::Result {
-                handler: Arc::new(handler),
+                slot: Some(slot),
                 container,
             },
         );
@@ -1013,11 +1015,10 @@ impl MenuBuilder {
             ..
         } = state;
         for placement in &placements {
-            if let PlacementKind::Section {
-                container, mapping, ..
-            } = &placement.kind
-            {
-                match mapping {
+            match &placement.kind {
+                PlacementKind::Section {
+                    container, mapping, ..
+                } => match mapping {
                     SlotMapping::Offset(offset) => {
                         self.claim(container, (*offset..offset + placement.rect.area()).into());
                     }
@@ -1026,7 +1027,11 @@ impl MenuBuilder {
                             self.claim(container, (index..index + 1).into());
                         }
                     }
+                },
+                PlacementKind::Result { container, .. } => {
+                    self.claim(container, (0..1).into());
                 }
+                PlacementKind::Slots { .. } => {}
             }
         }
 
@@ -1064,8 +1069,11 @@ impl MenuBuilder {
                                 kind.make(container, mapping.resolve(rect.local_index(x, y)));
                             self.push_boxed_slot(slot);
                         }
-                        PlacementKind::Result { handler, container } => {
-                            self.push_slot(ResultSlot::new(handler.clone(), container.clone()));
+                        PlacementKind::Result { slot, .. } => {
+                            self.push_slot(
+                                slot.take()
+                                    .expect("each result placement maps to exactly one slot"),
+                            );
                         }
                         PlacementKind::Slots { slots, .. } => {
                             let slot = slots[rect.local_index(x, y)]
@@ -1100,8 +1108,34 @@ impl MenuBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::inventory::slots::NormalSlot;
+    use crate::inventory::{
+        lock::ContainerLockGuard,
+        slots::{NormalSlot, ResultHandler},
+    };
+    use crate::player::Player;
     use steel_utils::locks::IntoShared;
+
+    struct NoopResultHandler(ContainerRef);
+
+    impl ResultHandler for NoopResultHandler {
+        fn result_container(&self) -> ContainerRef {
+            self.0.clone()
+        }
+
+        fn update_result(&self, _guard: &mut ContainerLockGuard) {}
+
+        fn on_result_taken(
+            &self,
+            _guard: &mut ContainerLockGuard,
+            _player: &Player,
+        ) -> Option<ItemStack> {
+            None
+        }
+
+        fn is_result_valid(&self, _guard: &ContainerLockGuard, _player: &Player) -> bool {
+            true
+        }
+    }
 
     fn container(size: usize) -> ContainerRef {
         ContainerRef::from(SimpleContainer::new(size).into_shared())
@@ -1307,37 +1341,83 @@ mod tests {
     #[test]
     fn result_slot_lands_on_its_cell() {
         use crate::inventory::container::ResultContainer;
-        use crate::inventory::lock::ContainerLockGuard;
-        use crate::player::Player;
-
-        struct NoopHandler(ContainerRef);
-        impl ResultHandler for NoopHandler {
-            fn result_container(&self) -> ContainerRef {
-                self.0.clone()
-            }
-            fn update_result(&self, _guard: &mut ContainerLockGuard) {}
-            fn on_result_taken(
-                &self,
-                _guard: &mut ContainerLockGuard,
-                _player: &Player,
-            ) -> Option<ItemStack> {
-                None
-            }
-            fn is_result_valid(&self, _guard: &ContainerLockGuard, _player: &Player) -> bool {
-                true
-            }
-        }
 
         let container = ContainerRef::from(ResultContainer::new().into_shared());
         let mut b = MenuBuilder::new(None, 0);
         let result = b.grid(3, |g| {
             let result = g
                 .place(Rect::cell(6, 2), container.clone())
-                .result(NoopHandler(container.clone()));
+                .result(NoopResultHandler(container.clone()));
             g.paint_all(ItemStack::empty());
             result
         });
         assert_eq!((result.start(), result.end()), (24, 25));
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "result placement container must match ResultHandler::result_container"
+    )]
+    fn result_placement_rejects_a_container_that_differs_from_the_handler() {
+        let placed = container(1);
+        let handled = container(1);
+        let mut b = MenuBuilder::new(None, 0);
+
+        b.grid(1, |g| {
+            let _ = g
+                .place(Rect::cell(0, 0), placed)
+                .result(NoopResultHandler(handled));
+        });
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "section takes container slots 0..1, but the container only has 0 slots"
+    )]
+    fn result_placement_rejects_a_container_without_slot_zero() {
+        let container = container(0);
+        let mut b = MenuBuilder::new(None, 0);
+
+        b.grid(1, |g| {
+            let _ = g
+                .place(Rect::cell(0, 0), container.clone())
+                .result(NoopResultHandler(container.clone()));
+            g.paint_all(ItemStack::empty());
+        });
+    }
+
+    #[test]
+    #[should_panic(expected = "two sections cover overlapping slots")]
+    fn result_placement_rejects_a_normal_alias() {
+        let container = container(1);
+        let mut b = MenuBuilder::new(None, 0);
+
+        b.grid(1, |g| {
+            let _ = g.place(Rect::cell(0, 0), container.clone()).section();
+            let _ = g
+                .place(Rect::cell(1, 0), container.clone())
+                .result(NoopResultHandler(container.clone()));
+            g.paint_all(ItemStack::empty());
+        });
+    }
+
+    #[test]
+    #[should_panic(expected = "fake slots require exclusive backing storage")]
+    fn raw_grid_slots_cannot_alias_result_backing_storage() {
+        use crate::inventory::menu::kinds::BasicKind;
+
+        let container = container(1);
+        let slots: Vec<Box<dyn Slot>> = vec![
+            Box::new(NormalSlot::new(container.clone(), 0)),
+            Box::new(ResultSlot::new(NoopResultHandler(container.clone()))),
+        ];
+        let mut b = MenuBuilder::new(None, 0);
+        b.grid(1, |g| {
+            let _ = g.place_boxed_slots(Rect::cols(0..2).rows(0), slots, [container.clone()]);
+            g.paint_all(ItemStack::empty());
+        });
+
+        let _ = b.build(BasicKind);
     }
 
     #[test]

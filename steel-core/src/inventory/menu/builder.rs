@@ -685,11 +685,16 @@ impl MenuBuilder {
     /// handler's [`result_container`](ResultHandler::result_container).
     ///
     /// See [`crate::inventory::container::ResultContainer`] and [`crate::inventory::slots::ResultHandler`].
+    ///
+    /// # Panics
+    /// Panics if the result container has no slot `0`, or that slot is already
+    /// covered by another section of this menu.
     pub fn result_slot(&mut self, handler: impl ResultHandler + 'static) -> Section {
-        let container = handler.result_container();
+        let slot = ResultSlot::new(handler);
+        let container = slot.result_container().clone();
+        self.claim(&container, (0..1).into());
         let start = self.slots.len();
-        self.slots
-            .push(Box::new(ResultSlot::new(handler, container.clone())));
+        self.slots.push(Box::new(slot));
         self.register_container(container);
         self.section_from(start)
     }
@@ -862,7 +867,7 @@ impl MenuBuilder {
     ///
     /// # Panics
     /// Panics if the number of slots does not match the client layout declared
-    /// by the menu type.
+    /// by the menu type, or if a fake slot aliases another physical slot.
     #[must_use]
     pub fn build(self, kind: impl MenuKind + 'static) -> Menu {
         self.build_boxed(Box::new(kind))
@@ -875,7 +880,7 @@ impl MenuBuilder {
     ///
     /// # Panics
     /// Panics if the number of slots does not match the client layout declared
-    /// by the menu type.
+    /// by the menu type, or if a fake slot aliases another physical slot.
     #[must_use]
     pub fn build_boxed(self, kind: Box<dyn MenuKind>) -> Menu {
         if let Some(menu_type) = self.menu_type {
@@ -888,6 +893,7 @@ impl MenuBuilder {
                 self.slots.len(),
             );
         }
+        Self::assert_no_fake_slot_aliases(&self.slots);
 
         let mut behavior = MenuBehavior::new(
             self.instance,
@@ -905,6 +911,30 @@ impl MenuBuilder {
             drain_sections: self.drain_sections,
         };
         Menu::from_parts(behavior, layout, kind, self.overrides_player_slots)
+    }
+
+    /// Fake slots have special removal and persistence semantics, so no other
+    /// menu slot may expose their physical backing storage.
+    fn assert_no_fake_slot_aliases(slots: &[Box<dyn Slot>]) {
+        use rustc_hash::FxHashMap;
+
+        let mut physical_slots: FxHashMap<(ContainerId, usize), (usize, bool)> =
+            FxHashMap::default();
+        for (slot_index, slot) in slots.iter().enumerate() {
+            let Some(key) = slot.container_key() else {
+                continue;
+            };
+            let is_fake = slot.is_fake();
+            if let Some(&(other_index, other_is_fake)) = physical_slots.get(&key) {
+                assert!(
+                    !is_fake && !other_is_fake,
+                    "menu slots {other_index} and {slot_index} alias physical container slot \
+                     {key:?}, but fake slots require exclusive backing storage"
+                );
+            } else {
+                physical_slots.insert(key, (slot_index, is_fake));
+            }
+        }
     }
 
     /// The identity of the menu being built.
@@ -990,6 +1020,28 @@ mod tests {
     use crate::inventory::container::SimpleContainer;
     use crate::inventory::menu::kinds::BasicKind;
 
+    struct NoopResultHandler(ContainerRef);
+
+    impl ResultHandler for NoopResultHandler {
+        fn result_container(&self) -> ContainerRef {
+            self.0.clone()
+        }
+
+        fn update_result(&self, _guard: &mut ContainerLockGuard) {}
+
+        fn on_result_taken(
+            &self,
+            _guard: &mut ContainerLockGuard,
+            _player: &Player,
+        ) -> Option<ItemStack> {
+            None
+        }
+
+        fn is_result_valid(&self, _guard: &ContainerLockGuard, _player: &Player) -> bool {
+            true
+        }
+    }
+
     #[test]
     #[should_panic(
         expected = "menu type minecraft:generic_9x6 expects 90 slots, but the builder has 0"
@@ -1013,6 +1065,48 @@ mod tests {
     fn direct_section_rejects_a_range_past_container_capacity() {
         let mut builder = MenuBuilder::new(None, 0);
         builder.section(SimpleContainer::new(1).into_shared(), 2);
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "section takes container slots 0..1, but the container only has 0 slots"
+    )]
+    fn result_slot_rejects_a_container_without_slot_zero() {
+        let container = ContainerRef::from(SimpleContainer::new(0).into_shared());
+        let mut builder = MenuBuilder::new(None, 0);
+
+        let _ = builder.result_slot(NoopResultHandler(container));
+    }
+
+    #[test]
+    #[should_panic(expected = "two sections cover overlapping slots")]
+    fn result_slot_claims_slot_zero_against_normal_sections() {
+        let container = ContainerRef::from(SimpleContainer::new(1).into_shared());
+        let mut builder = MenuBuilder::new(None, 0);
+        let _ = builder.result_slot(NoopResultHandler(container.clone()));
+
+        let _ = builder.section_all(container);
+    }
+
+    #[test]
+    #[should_panic(expected = "fake slots require exclusive backing storage")]
+    fn build_rejects_a_result_alias_through_player_inventory() {
+        let inventory = PlayerInventory::new().into_shared();
+        let mut builder = MenuBuilder::new(None, 0);
+        let _ = builder.result_slot(NoopResultHandler(ContainerRef::from(inventory.clone())));
+        let _ = builder.player_inventory_with(&inventory, SectionKind::Normal);
+
+        let _ = builder.build(BasicKind);
+    }
+
+    #[test]
+    fn build_allows_non_fake_player_inventory_aliases() {
+        let inventory = PlayerInventory::new().into_shared();
+        let mut builder = MenuBuilder::new(None, 0);
+        let _ = builder.player_inventory(&inventory);
+        let _ = builder.player_inventory_with(&inventory, SectionKind::Display);
+
+        let _ = builder.build(BasicKind);
     }
 
     #[test]

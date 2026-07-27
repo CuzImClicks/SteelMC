@@ -23,15 +23,18 @@ unsafe impl DowncastType for ResultSlot {
 }
 
 impl ResultSlot {
-    /// Creates a new `ResultSlot`
-    pub fn new(
-        handler: impl ResultHandler + 'static,
-        result_container: impl Into<ContainerRef>,
-    ) -> Self {
+    /// Creates a new `ResultSlot` backed by the handler's result container.
+    pub fn new(handler: impl ResultHandler + 'static) -> Self {
+        let result_container = handler.result_container();
         Self {
             handler: Arc::new(handler),
-            result_container: result_container.into(),
+            result_container,
         }
+    }
+
+    /// Returns the result container this slot derived from its handler.
+    pub(crate) const fn result_container(&self) -> &ContainerRef {
+        &self.result_container
     }
 }
 
@@ -106,5 +109,45 @@ impl Slot for ResultSlot {
 
     fn may_pickup(&self, guard: &ContainerLockGuard, player: &Player) -> bool {
         self.handler.is_result_valid(guard, player)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use steel_utils::locks::IntoShared;
+
+    use super::*;
+    use crate::inventory::container::SimpleContainer;
+
+    struct NoopResultHandler(ContainerRef);
+
+    impl ResultHandler for NoopResultHandler {
+        fn result_container(&self) -> ContainerRef {
+            self.0.clone()
+        }
+
+        fn update_result(&self, _guard: &mut ContainerLockGuard) {}
+
+        fn on_result_taken(
+            &self,
+            _guard: &mut ContainerLockGuard,
+            _player: &Player,
+        ) -> Option<ItemStack> {
+            None
+        }
+
+        fn is_result_valid(&self, _guard: &ContainerLockGuard, _player: &Player) -> bool {
+            true
+        }
+    }
+
+    #[test]
+    fn constructor_uses_the_handlers_result_container() {
+        let container = ContainerRef::from(SimpleContainer::new(1).into_shared());
+        let expected = container.container_id();
+
+        let slot = ResultSlot::new(NoopResultHandler(container));
+
+        assert_eq!(slot.container_key(), Some((expected, 0)));
     }
 }

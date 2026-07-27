@@ -170,7 +170,11 @@ pub trait Slot: ErasedType + Send + Sync {
     /// Slots without stable physical storage return `None`.
     fn container_key(&self) -> Option<(ContainerId, usize)>;
 
-    /// Returns true if this is a fake slot that doesn't persist items.
+    /// Returns true if normal menu persistence and transfer rules must not be
+    /// applied to this slot.
+    ///
+    /// A container-backed fake slot must be the menu's only view of its
+    /// physical [`container_key`](Self::container_key).
     fn is_fake(&self) -> bool {
         false
     }
