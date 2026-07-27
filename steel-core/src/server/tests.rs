@@ -14,7 +14,9 @@ use steel_protocol::utils::ConnectionProtocol;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::packets::play::{C_ADD_ENTITY, C_PLAYER_INFO_UPDATE, C_SYSTEM_CHAT};
-use steel_registry::{vanilla_dimension_types, vanilla_entities, vanilla_items};
+use steel_registry::{
+    vanilla_dimension_types, vanilla_entities, vanilla_game_rules, vanilla_items,
+};
 use steel_utils::ChunkPos;
 use steel_utils::{codec::VarInt, serial::ReadFrom, text::DisplayResolutor};
 use text_components::TextComponent;
@@ -493,6 +495,13 @@ fn domain_switch_job_progresses_across_chunk_scheduling_boundaries() {
 
         let queued = server.queue_domain_switch(Arc::clone(&player), "target".to_owned());
         assert!(queued.is_ok());
+        assert!(player.is_world_change_pending());
+        assert!(
+            server
+                .queue_domain_switch(Arc::clone(&player), "target".to_owned())
+                .is_err(),
+            "the first admitted relocation must retain exclusive ownership"
+        );
         server.process_domain_switches();
 
         assert_eq!(server.jobs.len(), 1);
@@ -500,10 +509,18 @@ fn domain_switch_job_progresses_across_chunk_scheduling_boundaries() {
         assert!(source_world.players.get_by_uuid(&uuid).is_none());
         assert!(target_world.players.get_by_uuid(&uuid).is_none());
 
+        let mut saw_target_admission = false;
         for tick in 1..=10_000 {
             source_world.chunk_map.advance_scheduling();
             target_world.chunk_map.advance_scheduling();
             server.tick_jobs(tick, true);
+            if target_world.contains_player(&player) {
+                saw_target_admission = true;
+                assert!(
+                    !player.is_world_change_pending(),
+                    "target admission must release the relocation lease before gameplay resumes"
+                );
+            }
             if server.jobs.is_empty() {
                 break;
             }
@@ -511,7 +528,9 @@ fn domain_switch_job_progresses_across_chunk_scheduling_boundaries() {
         }
 
         assert!(server.jobs.is_empty(), "domain switch job should finish");
+        assert!(saw_target_admission);
         assert!(!player.is_domain_switching());
+        assert!(!player.is_world_change_pending());
         assert!(source_world.players.get_by_uuid(&uuid).is_none());
         assert!(
             target_world
@@ -520,6 +539,79 @@ fn domain_switch_job_progresses_across_chunk_scheduling_boundaries() {
                 .is_some_and(|current| Arc::ptr_eq(&current, &player))
         );
         assert_eq!(player.position(), target_position);
+
+        drop(player);
+        drop(server);
+        if let Err(error) = fs::remove_dir_all(&storage_root).await {
+            panic!("test storage should be removed: {error}");
+        }
+    });
+}
+
+#[test]
+fn rejected_queued_domain_switch_retries_immediate_respawn() {
+    let source_world = fresh_test_world_in_domain("source", "spawn");
+    let target_world = fresh_test_world_in_domain("target", "spawn");
+    assert!(source_world.set_game_rule(&vanilla_game_rules::IMMEDIATE_RESPAWN, true));
+    let runtime = Builder::new_current_thread().enable_all().build();
+    let Ok(runtime) = runtime else {
+        panic!("test runtime should initialize");
+    };
+    runtime.block_on(async {
+        let domains = [
+            ResolvedDomainConfig {
+                name: "source".to_owned(),
+                default_world: source_world.key.clone(),
+                worlds: vec![source_world.key.clone()],
+            },
+            ResolvedDomainConfig {
+                name: "target".to_owned(),
+                default_world: target_world.key.clone(),
+                worlds: vec![target_world.key.clone()],
+            },
+        ];
+        let worlds = [Arc::clone(&source_world), Arc::clone(&target_world)];
+        let storage_root = test_storage_root("domain-switch-immediate-respawn");
+        let server = test_server_with_worlds(
+            "source".to_owned(),
+            &domains,
+            &worlds,
+            PermissionSubjectIndex::new(),
+            &storage_root,
+        )
+        .await;
+        let Ok(server) = server else {
+            panic!("test server should initialize");
+        };
+
+        let player = test_player(&server, Arc::clone(&source_world), Uuid::from_u128(1));
+        assert!(server.online_players.insert(Arc::clone(&player)));
+        assert!(source_world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+        let _ = player.mark_joined_world();
+
+        assert!(
+            server
+                .queue_domain_switch(Arc::clone(&player), "target".to_owned())
+                .is_ok()
+        );
+        player.set_health(0.0);
+        player.respawn();
+        assert_eq!(server.jobs.len(), 0);
+
+        server.process_domain_switches();
+
+        assert!(!player.is_domain_switching());
+        assert!(source_world.contains_player(&player));
+        assert!(!target_world.contains_player(&player));
+        assert_eq!(
+            server.jobs.len(),
+            1,
+            "releasing a dead queued switch must replay immediate respawn admission"
+        );
+        assert!(player.is_world_change_pending());
+
+        server.jobs.cancel_all();
+        assert!(!player.is_world_change_pending());
 
         drop(player);
         drop(server);
@@ -1171,7 +1263,16 @@ fn online_player_snapshot_includes_player_detached_for_end_credits() {
                 .iter()
                 .any(|online| Arc::ptr_eq(online, &player))
         );
+        let pending = server.process_player_disconnect(Arc::clone(&player));
+        assert!(pending.is_some());
+        assert!(
+            server
+                .online_players
+                .get_by_uuid(&player.gameprofile.id)
+                .is_none()
+        );
 
+        drop(pending);
         drop(player);
         drop(server);
         if let Err(error) = fs::remove_dir_all(&storage_root).await {

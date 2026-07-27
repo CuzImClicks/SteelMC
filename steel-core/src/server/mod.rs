@@ -376,6 +376,7 @@ struct DomainSwitchRequest {
     player: Arc<Player>,
     target_domain: String,
     target_world: Option<Arc<World>>,
+    pending_token: PendingWorldChangeToken,
 }
 
 /// Failure while atomically editing one player's persisted permission state.

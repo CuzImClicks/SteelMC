@@ -412,6 +412,42 @@ fn end_credits_removes_all_menus_before_detaching() {
 }
 
 #[test]
+fn admitted_world_change_prevents_end_credits_detach() {
+    init_test_registry();
+    let world = fresh_test_world("end_credits_pending_world_change");
+    let player = test_player(Arc::clone(&world));
+    assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+    let _ = player.mark_joined_world();
+    let Some(pending_token) = player.begin_pending_world_change() else {
+        panic!("test player should accept a pending world change");
+    };
+
+    player.show_end_credits();
+
+    assert!(!player.has_won_game());
+    assert!(world.contains_player(&player));
+    assert!(player.finish_pending_world_change(pending_token));
+
+    player.show_end_credits();
+
+    assert!(player.has_won_game());
+    assert!(!world.contains_player(&player));
+}
+
+#[test]
+fn duplicate_exact_player_admission_cleans_existing_membership() {
+    init_test_registry();
+    let world = fresh_test_world("duplicate_player_admission");
+    let player = test_player(Arc::clone(&world));
+    assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+
+    assert!(!world.add_player(Arc::clone(&player), ResetReason::WorldChange));
+
+    assert!(!world.contains_player(&player));
+    assert!(world.get_entity_by_id(player.id()).is_none());
+}
+
+#[test]
 fn disabled_damage_game_rule_matches_vanilla_player_damage_gates() {
     init_test_registry();
 

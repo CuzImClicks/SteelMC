@@ -1,3 +1,5 @@
+use std::ptr;
+
 use super::{
     Arc, CLogin, CSetDefaultSpawnPosition, CommonPlayerSpawnInfo, DVec3, DomainPlayerData,
     DomainPlayerState, EnderPearlRestoreJob, Entity, IMMEDIATE_RESPAWN, Identifier,
@@ -369,6 +371,27 @@ impl Server {
             true
         });
         players
+    }
+
+    /// Returns whether this exact player owns the online session for its UUID.
+    pub(crate) fn owns_online_player(&self, player: &Player) -> bool {
+        self.online_players
+            .get_by_uuid(&player.gameprofile.id)
+            .is_some_and(|online| ptr::eq(online.as_ref(), player))
+    }
+
+    /// Returns the world that owns this exact online player.
+    ///
+    /// The player's stored world pointer intentionally remains unchanged while
+    /// detached domain data is loading, so live membership must also be present
+    /// in that world's player index.
+    pub(crate) fn live_world_for_player(&self, player: &Player) -> Option<Arc<World>> {
+        if !self.owns_online_player(player) {
+            return None;
+        }
+
+        let world = player.get_world();
+        world.contains_player(player).then_some(world)
     }
 
     /// Returns the total number of players currently online across all worlds.

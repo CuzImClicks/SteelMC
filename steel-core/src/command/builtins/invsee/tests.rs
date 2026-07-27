@@ -20,6 +20,7 @@ use uuid::Uuid;
 
 use super::*;
 use crate::{
+    entity::PendingWorldChangeToken,
     inventory::{
         container::{Container as _, SimpleContainer},
         menu::kinds::BasicKind,
@@ -170,6 +171,19 @@ fn set_permissions(player: &Player, effective: PermissionSet) {
     );
 }
 
+fn begin_domain_switch(player: &Player) -> PendingWorldChangeToken {
+    let Some(token) = player.begin_pending_world_change() else {
+        panic!("test player should accept a pending world change");
+    };
+    assert!(player.begin_domain_switch(token));
+    token
+}
+
+fn finish_domain_switch(player: &Player, token: PendingWorldChangeToken) {
+    assert!(player.finish_domain_switch(token));
+    assert!(player.finish_pending_world_change(token));
+}
+
 #[test]
 fn base_and_modify_permissions_grant_the_expected_access() {
     let Ok((access, modify)) = invsee_permissions() else {
@@ -196,9 +210,9 @@ fn invsee_rejects_players_in_different_domains() {
     let target = test_player(25, "Target", 25);
     assert!(ensure_same_domain(&source, &target).is_ok());
 
-    assert!(target.begin_domain_switch());
+    let switch_token = begin_domain_switch(&target);
     assert!(ensure_same_domain(&source, &target).is_err());
-    target.finish_domain_switch();
+    finish_domain_switch(&target, switch_token);
     assert!(ensure_same_domain(&source, &target).is_ok());
 
     target.set_world(fresh_test_world_in_domain("other", "invsee_target"));
@@ -702,9 +716,9 @@ fn open_menu_keeps_captured_access_and_tracks_target_lifecycle() {
 
     let readonly_menu = invsee(2, &source, &target, false);
     assert!(readonly_menu.still_valid(&source));
-    assert!(source.begin_domain_switch());
+    let source_switch_token = begin_domain_switch(&source);
     assert!(!readonly_menu.still_valid(&source));
-    source.finish_domain_switch();
+    finish_domain_switch(&source, source_switch_token);
     assert!(readonly_menu.still_valid(&source));
 
     source.set_world(fresh_test_world_in_domain("other", "invsee_viewer"));
@@ -712,9 +726,9 @@ fn open_menu_keeps_captured_access_and_tracks_target_lifecycle() {
     source.set_world(Arc::clone(test_world()));
     assert!(readonly_menu.still_valid(&source));
 
-    assert!(target.begin_domain_switch());
+    let target_switch_token = begin_domain_switch(&target);
     assert!(!readonly_menu.still_valid(&source));
-    target.finish_domain_switch();
+    finish_domain_switch(&target, target_switch_token);
     assert!(readonly_menu.still_valid(&source));
 
     target.set_world(fresh_test_world_in_domain("other", "invsee_domain"));

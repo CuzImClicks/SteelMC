@@ -1,12 +1,13 @@
 use super::{
     Arc, BlockPos, DomainSwitchJob, DomainSwitchRequest, EndGatewayTeleportJob,
-    EndPortalTeleportJob, Entity, MenuRemovalStatus, NetherPortalTeleportJob, NetworkConnection,
-    PendingWorldChangeToken, Player, PortalKind, RespawnData, Server, SharedEntity, World,
-    WorldChangeRequest, can_teleport_between_worlds, change_entity_world,
+    EndPortalTeleportJob, Entity, IMMEDIATE_RESPAWN, MenuRemovalStatus, NetherPortalTeleportJob,
+    NetworkConnection, PendingWorldChangeToken, Player, PortalKind, RespawnData, Server,
+    SharedEntity, World, WorldChangeRequest, can_teleport_between_worlds, change_entity_world,
     clear_pending_world_change, is_allowed_to_enter_portal, is_end_dimension_type,
     is_nether_dimension_type, mem, nether_portal, portal_entity_still_valid,
     world_spawn_transition,
 };
+use crate::entity::LivingEntity as _;
 
 impl Server {
     pub(super) fn process_world_changes(self: &Arc<Self>, tick_count: u64, runs_normally: bool) {
@@ -373,14 +374,27 @@ impl Server {
             return Err(format!("unknown domain {target_domain}"));
         }
 
-        let current_domain = player.get_world().domain().to_owned();
+        let current_world = self
+            .live_world_for_player(&player)
+            .ok_or_else(|| "player is not present in a live world".to_owned())?;
+        let current_domain = current_world.domain().to_owned();
         if current_domain == target_domain {
             return Err(format!("already in domain {target_domain}"));
         }
         if player.connection.closed() {
             return Err("player is disconnecting".to_owned());
         }
-        if !player.begin_domain_switch() {
+        if player.get_health() <= 0.0 {
+            return Err("cannot switch domains while dead".to_owned());
+        }
+        if player.has_won_game() {
+            return Err("cannot switch domains from the End credits screen".to_owned());
+        }
+        let Some(pending_token) = player.begin_pending_world_change() else {
+            return Err("another player relocation is already in progress".to_owned());
+        };
+        if !player.begin_domain_switch(pending_token) {
+            player.finish_pending_world_change(pending_token);
             return Err("domain switch already in progress".to_owned());
         }
 
@@ -390,6 +404,7 @@ impl Server {
                 player,
                 target_domain,
                 target_world: None,
+                pending_token,
             });
         Ok(())
     }
@@ -403,11 +418,36 @@ impl Server {
         player: Arc<Player>,
         target_world: Arc<World>,
     ) -> Result<(), String> {
+        let target_world = self
+            .worlds
+            .get(&target_world.key)
+            .filter(|registered| Arc::ptr_eq(registered, &target_world))
+            .cloned()
+            .ok_or_else(|| "target world is not the registered loaded world".to_owned())?;
         let target_domain = target_world.domain().to_owned();
+        if !self.worlds.has_domain(&target_domain) {
+            return Err(format!("unknown domain {target_domain}"));
+        }
+        let current_world = self
+            .live_world_for_player(&player)
+            .ok_or_else(|| "player is not present in a live world".to_owned())?;
+        if current_world.domain() == target_domain {
+            return Err(format!("already in domain {target_domain}"));
+        }
         if player.connection.closed() {
             return Err("player is disconnecting".to_owned());
         }
-        if !player.begin_domain_switch() {
+        if player.get_health() <= 0.0 {
+            return Err("cannot switch domains while dead".to_owned());
+        }
+        if player.has_won_game() {
+            return Err("cannot switch domains from the End credits screen".to_owned());
+        }
+        let Some(pending_token) = player.begin_pending_world_change() else {
+            return Err("another player relocation is already in progress".to_owned());
+        };
+        if !player.begin_domain_switch(pending_token) {
+            player.finish_pending_world_change(pending_token);
             return Err("domain switch already in progress".to_owned());
         }
 
@@ -417,6 +457,7 @@ impl Server {
                 player,
                 target_domain,
                 target_world: Some(target_world),
+                pending_token,
             });
         Ok(())
     }
@@ -427,11 +468,18 @@ impl Server {
         for request in switches {
             let player = Arc::clone(&request.player);
             let player_name = player.gameprofile.name.clone();
+            let pending_token = request.pending_token;
             if let Err(error) = self.start_domain_switch(request) {
-                player.finish_domain_switch();
-                log::error!("Failed to switch {player_name} domain: {error}");
-                if !player.connection.closed() {
-                    player.disconnect("Failed to switch domain");
+                player.finish_domain_switch(pending_token);
+                player.finish_pending_world_change(pending_token);
+                log::warn!("Did not start domain switch for {player_name}: {error}");
+                let retry_immediate_respawn = !player.connection.closed()
+                    && player.get_health() <= 0.0
+                    && self
+                        .live_world_for_player(&player)
+                        .is_some_and(|world| world.get_game_rule(&IMMEDIATE_RESPAWN));
+                if retry_immediate_respawn {
+                    player.respawn();
                 }
             }
         }
@@ -442,25 +490,49 @@ impl Server {
             player,
             target_domain,
             target_world,
+            pending_token,
         } = request;
         if player.connection.closed() {
-            player.finish_domain_switch();
-            return Ok(());
+            return Err("player is disconnecting".to_owned());
+        }
+        if !player.is_domain_switch_queued(pending_token)
+            || !player.is_world_change_token_pending(pending_token)
+        {
+            return Err("domain switch no longer owns the player relocation".to_owned());
         }
         if !self.worlds.has_domain(&target_domain) {
             return Err(format!("unknown domain {target_domain}"));
         }
 
-        let current_domain = player.get_world().domain().to_owned();
+        let current_world = self
+            .live_world_for_player(&player)
+            .ok_or_else(|| "player is not present in a live world".to_owned())?;
+        let current_domain = current_world.domain().to_owned();
         if current_domain == target_domain {
-            player.finish_domain_switch();
-            return Ok(());
+            return Err(format!("already in domain {target_domain}"));
+        }
+        if player.get_health() <= 0.0 {
+            return Err("player died before the domain switch started".to_owned());
+        }
+        if player.has_won_game() {
+            return Err("player entered the End credits screen".to_owned());
+        }
+        if let Some(target_world) = target_world.as_ref() {
+            let registered = self
+                .worlds
+                .get(&target_world.key)
+                .ok_or_else(|| "target world is no longer loaded".to_owned())?;
+            if !Arc::ptr_eq(registered, target_world) || target_world.domain() != target_domain {
+                return Err("target world registration changed before the switch".to_owned());
+            }
         }
 
         if player.remove_all_menus() != MenuRemovalStatus::Complete {
             return Err("cannot save domain data while a menu callback is active".to_owned());
         }
-        let current_world = player.get_world();
+        if !player.mark_domain_switch_detached(pending_token) {
+            return Err("domain switch lost ownership before detaching".to_owned());
+        }
         let current_data = current_world
             .detach_player_for_domain_switch(&player)
             .ok_or_else(|| "player is not present in the current world".to_owned())?;
@@ -471,6 +543,7 @@ impl Server {
             current_data,
             target_domain,
             target_world,
+            pending_token,
         ));
 
         Ok(())
