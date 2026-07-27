@@ -541,9 +541,9 @@ impl Player {
             );
 
             world.unregister_player_entity(self);
+            world.chunk_map.remove_player(self);
             world.entity_tracker().on_player_leave(self.id());
             world.player_area_map.remove_by_entity_id(self.id());
-            world.chunk_map.remove_player(self);
             self.set_removed(RemovalReason::Killed);
             assert_eq!(
                 self.remove_all_menus_with_disposition(MenuItemDisposition::Drop),
