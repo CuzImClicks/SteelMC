@@ -3,7 +3,10 @@ use std::{
     io::Cursor,
     path::{Path, PathBuf},
     slice,
-    sync::{Arc, Weak},
+    sync::{
+        Arc, Weak,
+        atomic::{AtomicBool, Ordering},
+    },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -14,9 +17,7 @@ use steel_protocol::utils::ConnectionProtocol;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::packets::play::{C_ADD_ENTITY, C_PLAYER_INFO_UPDATE, C_SYSTEM_CHAT};
-use steel_registry::{
-    vanilla_dimension_types, vanilla_entities, vanilla_game_rules, vanilla_items,
-};
+use steel_registry::{vanilla_dimension_types, vanilla_entities, vanilla_items};
 use steel_utils::ChunkPos;
 use steel_utils::{codec::VarInt, serial::ReadFrom, text::DisplayResolutor};
 use text_components::TextComponent;
@@ -47,7 +48,7 @@ use crate::world::World;
 use super::known_players::{
     KnownPlayerSaveStep, UncachedPlayerTarget, classify_uncached_player_target, direct_uuid_profile,
 };
-use super::player_admission::PendingPlayerJoin;
+use super::player_admission::{PendingPlayerJoin, PlayerAdmissionState};
 use super::{
     AsyncMutex, CancellationToken, CommandRegistry, CommandRequest, CommandRequestQueue,
     DomainCommandStorage, DomainPlayerData, DomainPlayerState, DomainScoreboards,
@@ -59,11 +60,12 @@ use super::{
     UnpreparedDomainPlayerState, WorldMap, can_entity_return_from_end_to_overworld,
     cap_positive_thread_count, create_registered_dispatcher, is_allowed_to_enter_portal_target,
     is_end_return_transition, offline_uuid, packet_workers_for_available,
-    validate_player_permission_group_update,
+    portal_entity_still_valid, validate_player_permission_group_update,
 };
 
 struct TestConnection {
     sent_packets: Arc<SyncMutex<Vec<EncodedPacket>>>,
+    closed: AtomicBool,
 }
 
 impl NetworkConnection for TestConnection {
@@ -87,10 +89,12 @@ impl NetworkConnection for TestConnection {
         0
     }
 
-    fn close(&self) {}
+    fn close(&self) {
+        self.closed.store(true, Ordering::Release);
+    }
 
     fn closed(&self) -> bool {
-        false
+        self.closed.load(Ordering::Acquire)
     }
 }
 
@@ -290,6 +294,11 @@ fn saved_location_planning_honors_explicit_world_selection() {
         saved_player.set_velocity(saved_velocity);
         saved_player.set_health(7.0);
         let mut saved_data = PersistentPlayerData::from_player(&saved_player);
+        let saved_root_uuid = [3; 16];
+        saved_data.root_vehicle = Some(PersistentRootVehicle {
+            attach: [4; 16],
+            entity: test_persistent_entity(&vanilla_entities::MINECART, saved_root_uuid),
+        });
         if let Err(error) = server
             .player_data_storage
             .save_domain_data("target", uuid, &saved_data)
@@ -345,6 +354,15 @@ fn saved_location_planning_honors_explicit_world_selection() {
         assert_eq!(mismatch_player.position(), mismatch_spawn.position);
         assert_eq!(mismatch_player.velocity(), DVec3::ZERO);
         assert_eq!(mismatch_player.get_health().to_bits(), 7.0_f32.to_bits());
+        let restores = server.prepare_domain_restores(&mismatch_player, &mismatch_state);
+        assert!(restores.root_vehicle.is_none());
+        assert!(Server::install_domain_restores(
+            &mismatch_player,
+            mismatch_player.domain_residence_token(),
+            &restores,
+        ));
+        let mismatch_snapshot = PersistentPlayerData::from_player(&mismatch_player);
+        assert!(mismatch_snapshot.root_vehicle.is_none());
 
         let matching_plan = server
             .load_unprepared_domain_player_state(
@@ -386,6 +404,12 @@ fn saved_location_planning_honors_explicit_world_selection() {
         assert_eq!(matching_player.position(), saved_position);
         assert_eq!(matching_player.velocity(), saved_velocity);
         assert_eq!(matching_player.get_health().to_bits(), 7.0_f32.to_bits());
+        assert_eq!(
+            Server::root_vehicle_to_restore(&matching_state)
+                .as_ref()
+                .map(|root| root.entity.uuid),
+            Some(saved_root_uuid)
+        );
 
         let implicit_plan = server
             .load_unprepared_domain_player_state(&saved_player, "target", None)
@@ -714,6 +738,108 @@ fn domain_detach_snapshots_pending_restores_before_stale_jobs_finish() {
 }
 
 #[test]
+fn detached_domain_switch_owns_disconnect_snapshot_exclusively() {
+    let source_world = fresh_test_world_in_domain("source", "spawn");
+    let target_world = fresh_test_world_in_domain("target", "spawn");
+    let runtime = Builder::new_current_thread().enable_all().build();
+    let Ok(runtime) = runtime else {
+        panic!("test runtime should initialize");
+    };
+    runtime.block_on(async {
+        let domains = [
+            ResolvedDomainConfig {
+                name: "source".to_owned(),
+                default_world: source_world.key.clone(),
+                worlds: vec![source_world.key.clone()],
+            },
+            ResolvedDomainConfig {
+                name: "target".to_owned(),
+                default_world: target_world.key.clone(),
+                worlds: vec![target_world.key.clone()],
+            },
+        ];
+        let worlds = [Arc::clone(&source_world), Arc::clone(&target_world)];
+        let storage_root = test_storage_root("detached-domain-disconnect-owner");
+        let server = test_server_with_worlds(
+            "source".to_owned(),
+            &domains,
+            &worlds,
+            PermissionSubjectIndex::new(),
+            &storage_root,
+        )
+        .await;
+        let Ok(server) = server else {
+            panic!("test server should initialize");
+        };
+
+        let uuid = Uuid::from_u128(1);
+        let player = test_player(&server, Arc::clone(&source_world), uuid);
+        player.set_health(7.0);
+        player
+            .base()
+            .set_position_local(DVec3::new(12.5, 70.0, -3.5));
+        assert!(server.online_players.insert(Arc::clone(&player)));
+        assert!(source_world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+        let _ = player.mark_joined_world();
+
+        assert!(
+            server
+                .queue_domain_switch(Arc::clone(&player), "target".to_owned())
+                .is_ok()
+        );
+        server.process_domain_switches();
+        assert!(!source_world.contains_player(&player));
+        assert_eq!(
+            server.player_admissions.lock().get(&uuid),
+            Some(&PlayerAdmissionState::Relocating)
+        );
+
+        player.connection.close();
+        server.queue_player_disconnect(Arc::clone(&player));
+        let mut disconnect_saves = JoinSet::new();
+        server.start_player_disconnect_saves(&mut disconnect_saves);
+        assert!(
+            disconnect_saves.is_empty(),
+            "ordinary disconnect saving must not race the detached domain snapshot"
+        );
+
+        server.tick_jobs(1, true);
+        assert!(server.jobs.is_empty());
+        assert_eq!(
+            server.player_admissions.lock().get(&uuid),
+            Some(&PlayerAdmissionState::Disconnecting)
+        );
+        for _ in 0..1_000 {
+            server.start_player_disconnect_saves(&mut disconnect_saves);
+            if disconnect_saves.is_empty() && server.player_admissions.lock().get(&uuid).is_none() {
+                break;
+            }
+            sleep(Duration::from_millis(1)).await;
+        }
+        assert!(
+            disconnect_saves.is_empty(),
+            "the detached snapshot should finish saving"
+        );
+
+        let saved = server.player_data_storage.load_domain("source", uuid).await;
+        let Ok(Some(saved)) = saved else {
+            panic!("the source-domain snapshot should be the active save");
+        };
+        assert_eq!(saved.health.to_bits(), 7.0_f32.to_bits());
+        assert_eq!(
+            saved.pos.map(f64::to_bits),
+            [12.5_f64.to_bits(), 70.0_f64.to_bits(), (-3.5_f64).to_bits()]
+        );
+
+        drop(player);
+        drop(server);
+        if let Err(error) = fs::remove_dir_all(&storage_root).await {
+            panic!("test storage should be removed: {error}");
+        }
+    });
+}
+
+#[test]
 #[expect(
     clippy::too_many_lines,
     reason = "the failure-path test follows async transition and disconnect persistence boundaries"
@@ -861,10 +987,9 @@ fn failed_target_admission_preserves_only_valid_target_restores() {
 }
 
 #[test]
-fn rejected_queued_domain_switch_retries_immediate_respawn() {
+fn rejected_queued_domain_switch_retries_deferred_respawn_request() {
     let source_world = fresh_test_world_in_domain("source", "spawn");
     let target_world = fresh_test_world_in_domain("target", "spawn");
-    assert!(source_world.set_game_rule(&vanilla_game_rules::IMMEDIATE_RESPAWN, true));
     let runtime = Builder::new_current_thread().enable_all().build();
     let Ok(runtime) = runtime else {
         panic!("test runtime should initialize");
@@ -883,7 +1008,7 @@ fn rejected_queued_domain_switch_retries_immediate_respawn() {
             },
         ];
         let worlds = [Arc::clone(&source_world), Arc::clone(&target_world)];
-        let storage_root = test_storage_root("domain-switch-immediate-respawn");
+        let storage_root = test_storage_root("domain-switch-deferred-respawn");
         let server = test_server_with_worlds(
             "source".to_owned(),
             &domains,
@@ -918,13 +1043,58 @@ fn rejected_queued_domain_switch_retries_immediate_respawn() {
         assert_eq!(
             server.jobs.len(),
             1,
-            "releasing a dead queued switch must replay immediate respawn admission"
+            "releasing a dead queued switch must replay the one-shot client respawn request"
         );
         assert!(player.is_world_change_pending());
 
         server.jobs.cancel_all();
         assert!(!player.is_world_change_pending());
 
+        drop(player);
+        drop(server);
+        if let Err(error) = fs::remove_dir_all(&storage_root).await {
+            panic!("test storage should be removed: {error}");
+        }
+    });
+}
+
+#[test]
+fn portal_job_validity_rechecks_vanilla_portal_eligibility() {
+    let world = fresh_test_world("portal_revalidation");
+    let runtime = Builder::new_current_thread().enable_all().build();
+    let Ok(runtime) = runtime else {
+        panic!("test runtime should initialize");
+    };
+    runtime.block_on(async {
+        let storage_root = test_storage_root("portal-revalidation");
+        let server = test_server(
+            Arc::clone(&world),
+            PermissionSubjectIndex::new(),
+            &storage_root,
+        )
+        .await;
+        let Ok(server) = server else {
+            panic!("test server should initialize");
+        };
+        let player = test_player(&server, Arc::clone(&world), Uuid::from_u128(1));
+        assert!(server.online_players.insert(Arc::clone(&player)));
+        assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+        let _ = player.mark_joined_world();
+        let entity: SharedEntity = player.clone();
+        let Some(pending_token) = entity.begin_pending_world_change() else {
+            panic!("live player should acquire a portal relocation token");
+        };
+
+        assert!(portal_entity_still_valid(&entity, &world, pending_token));
+        player.set_sleeping_pos(steel_utils::BlockPos::new(0, 64, 0));
+        assert!(!portal_entity_still_valid(&entity, &world, pending_token));
+        player.clear_sleeping_pos();
+        player.set_health(0.0);
+        assert!(!portal_entity_still_valid(&entity, &world, pending_token));
+
+        assert!(entity.finish_pending_world_change(pending_token));
+        world.remove_player_for_world_change(&player);
+        assert!(server.online_players.remove_player_sync(&player).is_some());
         drop(player);
         drop(server);
         if let Err(error) = fs::remove_dir_all(&storage_root).await {
@@ -1675,6 +1845,7 @@ fn test_player_with_packets(
     let sent_packets = Arc::new(SyncMutex::new(Vec::new()));
     let connection = Arc::new(PlayerConnection::Other(Box::new(TestConnection {
         sent_packets: Arc::clone(&sent_packets),
+        closed: AtomicBool::new(false),
     })));
     let player = test_player_with_connection(server, world, uuid, name, entity_id, connection);
     (player, sent_packets)

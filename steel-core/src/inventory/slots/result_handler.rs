@@ -17,6 +17,12 @@ pub trait ResultHandler: Send + Sync {
     /// different containers.
     fn result_container(&self) -> ContainerRef;
 
+    /// Auxiliary containers accessed while validating or taking the result.
+    ///
+    /// The result container itself is already supplied by
+    /// [`result_container`](Self::result_container) and must not be repeated.
+    fn dependencies(&self) -> Vec<ContainerRef>;
+
     /// Recalculate the result based on current inputs.
     fn update_result(&self, guard: &mut ContainerLockGuard);
 
@@ -31,6 +37,10 @@ pub trait ResultHandler: Send + Sync {
 impl<T: ResultHandler + ?Sized> ResultHandler for Arc<T> {
     fn result_container(&self) -> ContainerRef {
         (**self).result_container()
+    }
+
+    fn dependencies(&self) -> Vec<ContainerRef> {
+        (**self).dependencies()
     }
 
     fn update_result(&self, guard: &mut ContainerLockGuard) {

@@ -16,6 +16,7 @@ pub(super) struct PlayerLifecycleState {
     client_loaded_timeout: i32,
     domain_switch: Option<DomainSwitchState>,
     respawn: Option<PendingWorldChangeToken>,
+    deferred_death_respawn: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,6 +43,7 @@ impl Default for PlayerLifecycleState {
             client_loaded_timeout: CLIENT_LOADED_TIMEOUT_TICKS,
             domain_switch: None,
             respawn: None,
+            deferred_death_respawn: false,
         }
     }
 }
@@ -226,7 +228,20 @@ impl PlayerLifecycleState {
         }
 
         self.respawn = Some(token);
+        self.deferred_death_respawn = false;
         true
+    }
+
+    pub(super) const fn defer_death_respawn(&mut self) {
+        if self.respawn.is_none() {
+            self.deferred_death_respawn = true;
+        }
+    }
+
+    pub(super) const fn take_deferred_death_respawn(&mut self) -> bool {
+        let deferred = self.deferred_death_respawn;
+        self.deferred_death_respawn = false;
+        deferred
     }
 
     #[must_use]
@@ -324,6 +339,20 @@ impl Player {
     /// Clears either player transition kind only if the caller owns its token.
     pub(crate) fn finish_player_transition(&self, token: PendingWorldChangeToken) -> bool {
         self.lifecycle.lock().finish_transition(token)
+    }
+
+    pub(crate) fn defer_death_respawn(&self) {
+        self.lifecycle.lock().defer_death_respawn();
+    }
+
+    pub(crate) fn retry_deferred_death_respawn(&self) {
+        if !self.lifecycle.lock().take_deferred_death_respawn() {
+            return;
+        }
+        if self.connection.closed() || self.get_health() > 0.0 {
+            return;
+        }
+        self.respawn();
     }
 
     /// Returns whether this player is currently switching domains.

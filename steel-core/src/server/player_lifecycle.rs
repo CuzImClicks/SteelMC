@@ -12,14 +12,14 @@ use super::{
 };
 
 pub(super) struct PreparedDomainRestores {
-    target_world: Arc<World>,
-    root_vehicle: Option<PersistentRootVehicle>,
-    ender_pearls: Vec<PreparedEnderPearlRestore>,
+    pub(super) target_world: Arc<World>,
+    pub(super) root_vehicle: Option<PersistentRootVehicle>,
+    pub(super) ender_pearls: Vec<PreparedEnderPearlRestore>,
 }
 
-struct PreparedEnderPearlRestore {
-    world: Arc<World>,
-    payload: PersistentEnderPearl,
+pub(super) struct PreparedEnderPearlRestore {
+    pub(super) world: Arc<World>,
+    pub(super) payload: PersistentEnderPearl,
 }
 
 impl Server {

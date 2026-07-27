@@ -81,7 +81,11 @@ pub(in crate::server) fn clear_pending_world_change(
     entity: &SharedEntity,
     pending_token: PendingWorldChangeToken,
 ) {
-    entity.finish_pending_world_change(pending_token);
+    if entity.finish_pending_world_change(pending_token)
+        && let Some(player) = entity.as_player()
+    {
+        player.retry_deferred_death_respawn();
+    }
 }
 
 fn finish_pending_world_change_after_transition(
@@ -91,11 +95,11 @@ fn finish_pending_world_change_after_transition(
 ) {
     match changed_entity {
         Some(changed_entity) if Arc::ptr_eq(entity, &changed_entity) => {
-            changed_entity.finish_pending_world_change(pending_token);
+            clear_pending_world_change(&changed_entity, pending_token);
         }
         Some(_) => {}
         None => {
-            entity.finish_pending_world_change(pending_token);
+            clear_pending_world_change(entity, pending_token);
         }
     }
 }
@@ -115,6 +119,7 @@ pub(in crate::server) fn portal_entity_still_valid(
     pending_token: PendingWorldChangeToken,
 ) -> bool {
     !entity.is_removed()
+        && entity.can_use_portal(false)
         && entity.is_world_change_token_pending(pending_token)
         && entity
             .level()

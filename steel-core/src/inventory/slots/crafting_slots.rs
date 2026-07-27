@@ -64,6 +64,10 @@ impl ResultHandler for CraftingHandler {
         ContainerRef::from(self.result_container.clone())
     }
 
+    fn dependencies(&self) -> Vec<ContainerRef> {
+        vec![ContainerRef::from(self.crafting_container.clone())]
+    }
+
     fn update_result(&self, guard: &mut ContainerLockGuard) {
         let crafting = guard
             .get_typed::<CraftingContainer>(self.crafting_id())

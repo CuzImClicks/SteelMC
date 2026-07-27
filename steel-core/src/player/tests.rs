@@ -190,10 +190,10 @@ impl_test_menu_kind_downcast!(ReopenOnRemoved, "steel:test/menu/player/reopen_on
 impl MenuKind for ReopenOnRemoved {
     fn removed(&mut self, _behavior: &mut MenuBehavior, player: &Player) {
         let replacement_removals = Arc::clone(&self.replacement_removals);
-        player.open_menu("Replacement", move |container_id, _world| {
+        player.open_menu("Replacement", move |context| {
             empty_test_menu(
-                player,
-                container_id,
+                context.player,
+                context.container_id,
                 CountRemovals {
                     count: replacement_removals,
                 },
@@ -329,8 +329,8 @@ fn death_keeps_menu_items_until_entity_removal() {
 
     let menu_container = Arc::clone(&transient);
     let inventory = Arc::clone(&player.inventory);
-    player.open_menu("Death cleanup", move |container_id, _world| {
-        let mut builder = MenuBuilder::new(&vanilla_menu_types::GENERIC_9X1, container_id);
+    player.open_menu("Death cleanup", move |context| {
+        let mut builder = MenuBuilder::new(&vanilla_menu_types::GENERIC_9X1, context.container_id);
         let transient_slots = builder.section(menu_container, 9);
         builder.player_inventory(&inventory);
         builder.drain([transient_slots]);
@@ -433,8 +433,8 @@ fn death_respawn_drops_menu_items_exactly_once() {
 
     let menu_container = Arc::clone(&transient);
     let inventory = Arc::clone(&player.inventory);
-    player.open_menu("Respawn cleanup", move |container_id, _world| {
-        let mut builder = MenuBuilder::new(&vanilla_menu_types::GENERIC_9X1, container_id);
+    player.open_menu("Respawn cleanup", move |context| {
+        let mut builder = MenuBuilder::new(&vanilla_menu_types::GENERIC_9X1, context.container_id);
         let transient_slots = builder.section(menu_container, 9);
         builder.player_inventory(&inventory);
         builder.drain([transient_slots]);
@@ -494,12 +494,13 @@ fn end_credits_removes_all_menus_before_detaching() {
     *player.inventory_menu.lock().behavior_mut().carried_mut() =
         ItemStack::with_count(&vanilla_items::DIRT, 3);
     let replacement_removals = Arc::new(AtomicUsize::new(0));
-    player.open_menu("Reopen on removal", |container_id, _world| {
+    let factory_replacement_removals = Arc::clone(&replacement_removals);
+    player.open_menu("Reopen on removal", move |context| {
         empty_test_menu(
-            &player,
-            container_id,
+            context.player,
+            context.container_id,
             ReopenOnRemoved {
-                replacement_removals: Arc::clone(&replacement_removals),
+                replacement_removals: factory_replacement_removals,
             },
         )
     });

@@ -2,7 +2,11 @@ use std::sync::Arc;
 
 use glam::DVec3;
 use steel_registry::{
-    data_components::vanilla_components::{CUSTOM_NAME, REPAIR_COST},
+    REGISTRY, RegistryExt, RegistryReference,
+    data_components::{
+        components::PotionContents,
+        vanilla_components::{CUSTOM_NAME, POTION_CONTENTS, REPAIR_COST},
+    },
     item_stack::ItemStack,
     test_support::init_test_registry,
     vanilla_blocks, vanilla_enchantments, vanilla_entities, vanilla_items,
@@ -217,6 +221,39 @@ fn rename_uses_java_blank_rules() {
         result.get(CUSTOM_NAME).map(ToString::to_string).as_deref(),
         Some("\u{0085}")
     );
+}
+
+#[test]
+fn unchanged_dynamic_potion_name_does_not_create_rename_result() {
+    let (_world, player, _pos, mut menu) = test_anvil("anvil_dynamic_potion_name");
+    let Some(kind) = menu.kind().downcast_ref::<AnvilKind>() else {
+        panic!("anvil builder should create an anvil menu");
+    };
+    let (input_container, result_container, level_cost) = (
+        Arc::clone(&kind.input_container),
+        Arc::clone(&kind.result_container),
+        kind.level_cost,
+    );
+    let healing = REGISTRY
+        .potions
+        .by_key(&steel_utils::Identifier::vanilla_static("healing"))
+        .expect("healing potion should be registered");
+    let mut potion = ItemStack::new(&vanilla_items::POTION);
+    potion.set(
+        POTION_CONTENTS,
+        PotionContents::new(
+            Some(RegistryReference::new(healing)),
+            None,
+            Vec::new(),
+            None,
+        ),
+    );
+    input_container.lock().set_item(0, potion);
+
+    menu.set_item_name("Potion of Healing", &player);
+
+    assert!(result_container.lock().get_item(0).is_empty());
+    assert_eq!(level_cost.get(menu.behavior()), 0);
 }
 
 #[test]

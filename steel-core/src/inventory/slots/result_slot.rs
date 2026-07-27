@@ -5,8 +5,8 @@ use steel_utils::{DowncastType, DowncastTypeKey};
 
 use crate::{
     inventory::{
-        lock::{ContainerId, ContainerLockGuard, ContainerRef},
-        slots::{ResultHandler, Slot},
+        lock::{ContainerLockGuard, ContainerRef},
+        slots::{ResultHandler, Slot, SlotStorage},
     },
     player::Player,
 };
@@ -14,7 +14,7 @@ use crate::{
 /// A fake Slot that contains the resulting item of f.e. a craft
 pub struct ResultSlot {
     handler: Arc<dyn ResultHandler + Send + Sync>,
-    result_container: ContainerRef,
+    storage: SlotStorage,
 }
 
 // SAFETY: This key uniquely identifies Steel's `ResultSlot`.
@@ -26,60 +26,65 @@ impl ResultSlot {
     /// Creates a new `ResultSlot` backed by the handler's result container.
     pub fn new(handler: impl ResultHandler + 'static) -> Self {
         let result_container = handler.result_container();
+        let storage =
+            SlotStorage::physical(result_container, 0).with_dependencies(handler.dependencies());
         Self {
             handler: Arc::new(handler),
-            result_container,
+            storage,
         }
     }
 
     /// Returns the result container this slot derived from its handler.
-    pub(crate) const fn result_container(&self) -> &ContainerRef {
-        &self.result_container
+    pub(crate) fn result_container(&self) -> &ContainerRef {
+        let Some((container, _)) = self.storage.physical_backing() else {
+            unreachable!("ResultSlot always has physical storage");
+        };
+        container
     }
 }
 
 impl Slot for ResultSlot {
+    fn storage(&self) -> &SlotStorage {
+        &self.storage
+    }
+
     fn get_item<'a>(&self, guard: &'a ContainerLockGuard) -> &'a ItemStack {
         guard
-            .get(self.result_container.container_id())
+            .get(self.result_container().container_id())
             .expect("failed to get item from result container")
             .get_item(0)
     }
 
     fn get_item_mut<'a>(&self, guard: &'a mut ContainerLockGuard) -> &'a mut ItemStack {
         guard
-            .get_mut(self.result_container.container_id())
+            .get_mut(self.result_container().container_id())
             .expect("failed to get item mutabily from result container")
             .get_item_mut(0)
     }
 
     fn set_item(&self, guard: &mut ContainerLockGuard, stack: ItemStack) {
         guard
-            .get_mut(self.result_container.container_id())
+            .get_mut(self.result_container().container_id())
             .expect("failed to get item mutabily from result container")
             .set_item(0, stack);
     }
 
     fn get_max_stack_size(&self, guard: &ContainerLockGuard) -> i32 {
         guard
-            .get(self.result_container.container_id())
+            .get(self.result_container().container_id())
             .expect("result container not locked")
             .get_max_stack_size()
     }
 
     fn set_changed(&self, guard: &mut ContainerLockGuard) {
         guard
-            .get_mut(self.result_container.container_id())
+            .get_mut(self.result_container().container_id())
             .expect("result container not locked")
             .set_changed();
     }
 
     fn get_container_slot(&self) -> usize {
         0
-    }
-
-    fn container_key(&self) -> Option<(ContainerId, usize)> {
-        Some((self.result_container.container_id(), 0))
     }
 
     fn on_take(
@@ -126,6 +131,10 @@ mod tests {
             self.0.clone()
         }
 
+        fn dependencies(&self) -> Vec<ContainerRef> {
+            Vec::new()
+        }
+
         fn update_result(&self, _guard: &mut ContainerLockGuard) {}
 
         fn on_result_taken(
@@ -148,6 +157,6 @@ mod tests {
 
         let slot = ResultSlot::new(NoopResultHandler(container));
 
-        assert_eq!(slot.container_key(), Some((expected, 0)));
+        assert_eq!(slot.storage().physical_key(), Some((expected, 0)));
     }
 }

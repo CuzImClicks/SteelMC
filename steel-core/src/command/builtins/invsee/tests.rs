@@ -451,15 +451,11 @@ fn modify_view_drag_queues_each_changed_target_slot() {
         },
         QuickCraft::AddSlot {
             slot: TARGET_HOTBAR_START,
-            kind: DragKind::Left,
         },
         QuickCraft::AddSlot {
             slot: TARGET_HOTBAR_START + 1,
-            kind: DragKind::Left,
         },
-        QuickCraft::End {
-            kind: DragKind::Left,
-        },
+        QuickCraft::End,
     ] {
         menu.clicked(Click::QuickCraft(action), &source);
     }
@@ -493,14 +489,12 @@ fn overriding_menu_defers_main_inventory_sync_until_close() {
         .set_item(39, ItemStack::new(&vanilla_items::DIAMOND_HELMET));
 
     let fake_slots = SimpleContainer::new(72).into_shared();
-    recording
-        .player
-        .open_menu("Overlay", move |container_id, _world| {
-            let mut builder = MenuBuilder::new(&vanilla_menu_types::GENERIC_9X4, container_id);
-            builder.section_with(fake_slots, 72, SectionKind::Display);
-            builder.override_player_slots();
-            builder.build(BasicKind {})
-        });
+    recording.player.open_menu("Overlay", move |context| {
+        let mut builder = MenuBuilder::new(&vanilla_menu_types::GENERIC_9X4, context.container_id);
+        builder.section_with(fake_slots, 72, SectionKind::Display);
+        builder.override_player_slots();
+        builder.build(BasicKind {})
+    });
     recording.packets.lock().clear();
     recording.player.request_inventory_resync([0, 39]);
 
@@ -535,14 +529,13 @@ fn replacing_overriding_menu_keeps_main_inventory_sync_deferred() {
 
     for title in ["First overlay", "Second overlay"] {
         let fake_slots = SimpleContainer::new(72).into_shared();
-        recording
-            .player
-            .open_menu(title, move |container_id, _world| {
-                let mut builder = MenuBuilder::new(&vanilla_menu_types::GENERIC_9X4, container_id);
-                builder.section_with(fake_slots, 72, SectionKind::Display);
-                builder.override_player_slots();
-                builder.build(BasicKind {})
-            });
+        recording.player.open_menu(title, move |context| {
+            let mut builder =
+                MenuBuilder::new(&vanilla_menu_types::GENERIC_9X4, context.container_id);
+            builder.section_with(fake_slots, 72, SectionKind::Display);
+            builder.override_player_slots();
+            builder.build(BasicKind {})
+        });
         recording.player.request_inventory_resync([0]);
     }
     recording.packets.lock().clear();
@@ -569,14 +562,12 @@ fn normal_menu_does_not_defer_main_inventory_sync() {
 
     let menu_slots = SimpleContainer::new(9).into_shared();
     let inventory = recording.player.inventory.clone();
-    recording
-        .player
-        .open_menu("Normal", move |container_id, _world| {
-            let mut builder = MenuBuilder::new(&vanilla_menu_types::GENERIC_9X1, container_id);
-            builder.section_with(menu_slots, 9, SectionKind::Display);
-            builder.player_inventory(&inventory);
-            builder.build(BasicKind {})
-        });
+    recording.player.open_menu("Normal", move |context| {
+        let mut builder = MenuBuilder::new(&vanilla_menu_types::GENERIC_9X1, context.container_id);
+        builder.section_with(menu_slots, 9, SectionKind::Display);
+        builder.player_inventory(&inventory);
+        builder.build(BasicKind {})
+    });
     recording.packets.lock().clear();
     recording.player.request_inventory_resync([0]);
 

@@ -184,6 +184,9 @@ impl Player {
             return;
         }
         let Some(pending_token) = self.begin_respawn_request() else {
+            if self.is_world_change_pending() {
+                self.defer_death_respawn();
+            }
             return;
         };
 

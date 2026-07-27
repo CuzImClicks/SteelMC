@@ -73,6 +73,10 @@ impl ResultHandler for AnvilResultHandler {
         ContainerRef::from(self.result_container.clone())
     }
 
+    fn dependencies(&self) -> Vec<ContainerRef> {
+        vec![ContainerRef::from(self.input_container.clone())]
+    }
+
     fn update_result(&self, _guard: &mut ContainerLockGuard) {}
 
     fn on_result_taken(

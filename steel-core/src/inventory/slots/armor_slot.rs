@@ -1,7 +1,7 @@
 use crate::{
     inventory::{
-        lock::{ContainerId, ContainerLockGuard, ContainerRef},
-        slots::{NormalSlot, Slot},
+        lock::{ContainerLockGuard, ContainerRef},
+        slots::{NormalSlot, Slot, SlotStorage},
     },
     player::Player,
 };
@@ -45,6 +45,10 @@ impl ArmorSlot {
 }
 
 impl Slot for ArmorSlot {
+    fn storage(&self) -> &SlotStorage {
+        self.base.storage()
+    }
+
     fn get_item<'a>(&self, guard: &'a ContainerLockGuard) -> &'a ItemStack {
         self.base.get_item(guard)
     }
@@ -93,9 +97,5 @@ impl Slot for ArmorSlot {
 
     fn get_container_slot(&self) -> usize {
         self.base.get_container_slot()
-    }
-
-    fn container_key(&self) -> Option<(ContainerId, usize)> {
-        self.base.container_key()
     }
 }

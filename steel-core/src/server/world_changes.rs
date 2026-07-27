@@ -1,7 +1,7 @@
 use super::{
     Arc, BlockPos, DomainSwitchJob, DomainSwitchRequest, EndGatewayTeleportJob,
-    EndPortalTeleportJob, Entity, IMMEDIATE_RESPAWN, MenuRemovalStatus, NetherPortalTeleportJob,
-    NetworkConnection, PendingWorldChangeToken, Player, PortalKind, RespawnData, Server,
+    EndPortalTeleportJob, Entity, MenuRemovalStatus, NetherPortalTeleportJob, NetworkConnection,
+    PendingWorldChangeToken, Player, PlayerAdmissionState, PortalKind, RespawnData, Server,
     SharedEntity, World, WorldChangeRequest, can_teleport_between_worlds, change_entity_world,
     clear_pending_world_change, is_allowed_to_enter_portal, is_end_dimension_type,
     is_nether_dimension_type, mem, nether_portal, portal_entity_still_valid,
@@ -474,16 +474,8 @@ impl Server {
             let pending_token = request.pending_token;
             if let Err(error) = self.start_domain_switch(request) {
                 player.finish_domain_switch(pending_token);
-                player.finish_pending_world_change(pending_token);
+                clear_pending_world_change(&(Arc::clone(&player) as SharedEntity), pending_token);
                 log::warn!("Did not start domain switch for {player_name}: {error}");
-                let retry_immediate_respawn = !player.connection.closed()
-                    && player.get_health() <= 0.0
-                    && self
-                        .live_world_for_player(&player)
-                        .is_some_and(|world| world.get_game_rule(&IMMEDIATE_RESPAWN));
-                if retry_immediate_respawn {
-                    player.respawn();
-                }
             }
         }
     }
@@ -533,12 +525,19 @@ impl Server {
         if player.remove_all_menus() != MenuRemovalStatus::Complete {
             return Err("cannot save domain data while a menu callback is active".to_owned());
         }
+        if !self.reserve_player_relocation(&player) {
+            return Err("domain switch could not reserve player persistence".to_owned());
+        }
         if !player.mark_domain_switch_detached(pending_token) {
+            self.release_player_admission(player.gameprofile.id, PlayerAdmissionState::Relocating);
             return Err("domain switch lost ownership before detaching".to_owned());
         }
-        let (current_data, residence_token) = current_world
-            .detach_player_for_domain_switch(&player)
-            .ok_or_else(|| "player is not present in the current world".to_owned())?;
+        let Some((current_data, residence_token)) =
+            current_world.detach_player_for_domain_switch(&player)
+        else {
+            self.release_player_admission(player.gameprofile.id, PlayerAdmissionState::Relocating);
+            return Err("player is not present in the current world".to_owned());
+        };
         self.jobs.spawn(DomainSwitchJob::new(
             self,
             player,

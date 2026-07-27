@@ -19,6 +19,7 @@ pub(super) struct PendingPlayerDisconnect {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum PlayerAdmissionState {
     Joining,
+    Relocating,
     Disconnecting,
 }
 
@@ -234,7 +235,42 @@ impl Server {
             .is_none()
     }
 
-    fn release_player_admission(&self, uuid: Uuid, state: PlayerAdmissionState) {
+    pub(super) fn reserve_player_relocation(&self, player: &Arc<Player>) -> bool {
+        let uuid = player.gameprofile.id;
+        let mut admissions = self.player_admissions.lock();
+        if admissions.contains_key(&uuid) {
+            return false;
+        }
+        if !self
+            .online_players
+            .get_by_uuid(&uuid)
+            .is_some_and(|current| Arc::ptr_eq(&current, player))
+        {
+            return false;
+        }
+        admissions
+            .insert(uuid, PlayerAdmissionState::Relocating)
+            .is_none()
+    }
+
+    fn transition_player_relocation_to_disconnect(&self, player: &Arc<Player>) -> bool {
+        let uuid = player.gameprofile.id;
+        let mut admissions = self.player_admissions.lock();
+        if admissions.get(&uuid) != Some(&PlayerAdmissionState::Relocating) {
+            return false;
+        }
+        if !self
+            .online_players
+            .get_by_uuid(&uuid)
+            .is_some_and(|current| Arc::ptr_eq(&current, player))
+        {
+            return false;
+        }
+        let _ = admissions.insert(uuid, PlayerAdmissionState::Disconnecting);
+        true
+    }
+
+    pub(super) fn release_player_admission(&self, uuid: Uuid, state: PlayerAdmissionState) {
         let mut admissions = self.player_admissions.lock();
         if admissions.get(&uuid) == Some(&state) {
             let _ = admissions.remove(&uuid);
@@ -281,6 +317,52 @@ impl Server {
         player.finish_player_transition(pending_token);
         player.finish_pending_world_change(pending_token);
         if !self.reserve_player_disconnect(&player) {
+            return;
+        }
+
+        self.broadcast_player_leave_message(&player);
+        self.remove_online_player_sync(&player);
+        self.broadcast_to_online(CRemovePlayerInfo { uuids: vec![uuid] });
+        self.pending_player_disconnects
+            .send_prepared(PendingPlayerDisconnect {
+                player,
+                domain,
+                player_data,
+            });
+    }
+
+    pub(crate) fn queue_relocating_player_disconnect(
+        &self,
+        player: Arc<Player>,
+        domain: String,
+        player_data: Arc<PersistentPlayerData>,
+        pending_token: PendingWorldChangeToken,
+    ) {
+        let uuid = player.gameprofile.id;
+        let live_memberships = self
+            .worlds
+            .values()
+            .filter(|world| world.contains_player(&player))
+            .cloned()
+            .collect::<Vec<_>>();
+        if !live_memberships.is_empty() {
+            tracing::error!(
+                player = %player.gameprofile.name,
+                membership_count = live_memberships.len(),
+                "Cleaning live world membership after relocating player admission failed"
+            );
+            for world in live_memberships {
+                world.remove_player_for_world_change(&player);
+            }
+        }
+
+        player.finish_player_transition(pending_token);
+        player.finish_pending_world_change(pending_token);
+        if !self.transition_player_relocation_to_disconnect(&player) {
+            tracing::error!(
+                player = %player.gameprofile.name,
+                "Relocating player lost its exclusive disconnect-save ownership"
+            );
             return;
         }
 

@@ -14,8 +14,8 @@ use crate::{
         player_data::PersistentPlayerData, player_data_storage::GlobalPlayerData,
     },
     server::{
-        DomainPlayerData, DomainPlayerState, PreparedSpawn, Server, UnpreparedDomainPlayerData,
-        UnpreparedDomainPlayerState,
+        DomainPlayerData, DomainPlayerState, PlayerAdmissionState, PreparedSpawn, Server,
+        UnpreparedDomainPlayerData, UnpreparedDomainPlayerState,
     },
     world::{
         World,
@@ -149,7 +149,7 @@ impl DomainSwitchJob {
             self.player.cleanup();
             return JobPoll::Finished;
         };
-        server.queue_detached_player_disconnect(
+        server.queue_relocating_player_disconnect(
             Arc::clone(&self.player),
             self.source_domain.clone(),
             source_data,
@@ -262,7 +262,7 @@ impl DomainSwitchJob {
         if !self.player.spawn(pos, rotation, ResetReason::WorldChange) {
             let target_data = PersistentPlayerData::from_player(&self.player);
             self.source_data = None;
-            server.queue_detached_player_disconnect(
+            server.queue_relocating_player_disconnect(
                 Arc::clone(&self.player),
                 self.target_domain.clone(),
                 Arc::new(target_data),
@@ -278,6 +278,10 @@ impl DomainSwitchJob {
             );
             self.player.finish_domain_switch(self.pending_token);
             self.player.connection.close();
+            server.release_player_admission(
+                self.player.gameprofile.id,
+                PlayerAdmissionState::Relocating,
+            );
             server.queue_player_disconnect(Arc::clone(&self.player));
             return JobPoll::Finished;
         }
@@ -288,9 +292,15 @@ impl DomainSwitchJob {
             );
             self.player.finish_domain_switch(self.pending_token);
             self.player.connection.close();
+            server.release_player_admission(
+                self.player.gameprofile.id,
+                PlayerAdmissionState::Relocating,
+            );
             server.queue_player_disconnect(Arc::clone(&self.player));
             return JobPoll::Finished;
         }
+        server
+            .release_player_admission(self.player.gameprofile.id, PlayerAdmissionState::Relocating);
         server.schedule_domain_restores(&self.player, self.residence_token, restores);
 
         let (sender, receiver) = mpsc::channel();
@@ -468,6 +478,12 @@ impl ServerJob for DomainSwitchJob {
         } else {
             self.player.finish_domain_switch(self.pending_token);
             self.player.finish_pending_world_change(self.pending_token);
+            if let Some(server) = self.server.upgrade() {
+                server.release_player_admission(
+                    self.player.gameprofile.id,
+                    PlayerAdmissionState::Relocating,
+                );
+            }
         }
     }
 }

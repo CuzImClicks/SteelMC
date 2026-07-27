@@ -506,10 +506,13 @@ impl MenuBuilder {
     /// Panics if the sections carved from the returned handle take more slots
     /// than the container has.
     #[must_use]
+    #[expect(
+        clippy::unused_self,
+        reason = "split is intentionally builder-scoped as part of the menu DSL"
+    )]
     pub fn split(&mut self, container: impl Into<ContainerRef>) -> ContainerSlots {
         let container = container.into();
         let size = Self::container_size(&container);
-        self.register_container(container.clone());
         ContainerSlots {
             container,
             next: 0,
@@ -572,9 +575,9 @@ impl MenuBuilder {
         self.claim(&container, range);
         let start = self.slots.len();
         for index in range {
-            self.slots.push(kind.make(&container, index));
+            let slot = kind.make(&container, index);
+            self.push_section_slot(slot, &container, index);
         }
-        self.register_container(container);
         self.section_from(start)
     }
 
@@ -635,12 +638,12 @@ impl MenuBuilder {
                     run = Some((index..index + 1).into());
                 }
             }
-            self.slots.push(kind.make(&container, index));
+            let slot = kind.make(&container, index);
+            self.push_section_slot(slot, &container, index);
         }
         if let Some(r) = run {
             self.claim(&container, r);
         }
-        self.register_container(container);
         self.section_from(start)
     }
 
@@ -668,9 +671,9 @@ impl MenuBuilder {
         let container = ContainerRef::from(inventory.clone());
         let start = self.slots.len();
         for index in PlayerInventory::MAIN.chain(PlayerInventory::HOTBAR) {
-            self.slots.push(kind.make(&container, index));
+            let slot = kind.make(&container, index);
+            self.push_section_slot(slot, &container, index);
         }
-        self.register_container(container);
 
         let main = Section::new(self.instance, start..start + PlayerInventory::MAIN.len());
         let hotbar = Section::new(
@@ -694,8 +697,7 @@ impl MenuBuilder {
         let container = slot.result_container().clone();
         self.claim(&container, (0..1).into());
         let start = self.slots.len();
-        self.slots.push(Box::new(slot));
-        self.register_container(container);
+        self.push_section_slot(Box::new(slot), &container, 0);
         self.section_from(start)
     }
 
@@ -710,11 +712,7 @@ impl MenuBuilder {
     /// Production menus go through [`section_at`](Self::section_at) or a
     /// [`SectionKind::custom`] factory instead, which keep overlap validation.
     #[cfg(test)]
-    pub(crate) fn custom_section<S>(
-        &mut self,
-        slots: impl IntoIterator<Item = S>,
-        containers: impl IntoIterator<Item = impl Into<ContainerRef>>,
-    ) -> Section
+    pub(crate) fn custom_section<S>(&mut self, slots: impl IntoIterator<Item = S>) -> Section
     where
         S: Slot + 'static,
     {
@@ -722,7 +720,6 @@ impl MenuBuilder {
             slots
                 .into_iter()
                 .map(|slot| Box::new(slot) as Box<dyn Slot>),
-            containers,
         )
     }
 
@@ -731,12 +728,10 @@ impl MenuBuilder {
     pub(crate) fn custom_boxed_section(
         &mut self,
         slots: impl IntoIterator<Item = Box<dyn Slot>>,
-        containers: impl IntoIterator<Item = impl Into<ContainerRef>>,
     ) -> Section {
         let start = self.slots.len();
-        self.slots.extend(slots);
-        for container in containers {
-            self.register_container(container);
+        for slot in slots {
+            self.push_boxed_slot(slot);
         }
         self.section_from(start)
     }
@@ -764,7 +759,8 @@ impl MenuBuilder {
     /// `container` -> `player_inventory` is [`FillDirection::Backward`]
     ///
     /// # Panics
-    /// Panics if any section was created by a different [`MenuBuilder`].
+    /// Panics if a section belongs to another builder, a source overlaps an
+    /// existing route, or a target overlaps its source.
     pub fn route(
         &mut self,
         from: impl IntoSections,
@@ -850,6 +846,13 @@ impl MenuBuilder {
     /// ```
     pub fn drain(&mut self, sections: impl IntoSections) -> &mut Self {
         let ranges: Vec<_> = sections.into_sections().map(|s| self.owned(s)).collect();
+        assert!(
+            ranges
+                .iter()
+                .flat_map(|range| *range)
+                .all(|slot| !self.slots[slot].is_fake()),
+            "drain sections cannot contain fake or result slots"
+        );
         self.drain_sections.extend(ranges);
         self
     }
@@ -921,7 +924,7 @@ impl MenuBuilder {
         let mut physical_slots: FxHashMap<(ContainerId, usize), (usize, bool)> =
             FxHashMap::default();
         for (slot_index, slot) in slots.iter().enumerate() {
-            let Some(key) = slot.container_key() else {
+            let Some(key) = slot.storage().physical_key() else {
                 continue;
             };
             let is_fake = slot.is_fake();
@@ -948,14 +951,27 @@ impl MenuBuilder {
         self.slots.len()
     }
 
-    /// Appends a single concrete slot without creating a section.
-    pub(crate) fn push_slot(&mut self, slot: impl Slot + 'static) {
-        self.push_boxed_slot(Box::new(slot));
-    }
-
     /// Appends a single already-erased slot without creating a section.
     pub(crate) fn push_boxed_slot(&mut self, slot: Box<dyn Slot>) {
+        for container in slot.storage().container_refs() {
+            self.register_container(container.clone());
+        }
         self.slots.push(slot);
+    }
+
+    /// Appends a slot whose physical backing must match its declarative source.
+    pub(crate) fn push_section_slot(
+        &mut self,
+        slot: Box<dyn Slot>,
+        source: &ContainerRef,
+        source_index: usize,
+    ) {
+        assert_eq!(
+            slot.storage().physical_key(),
+            Some((source.container_id(), source_index)),
+            "section slot backing must match its declared source container and index"
+        );
+        self.push_boxed_slot(slot);
     }
 
     /// Records that a section covers the container-local `range` of `container`.
@@ -1027,6 +1043,39 @@ mod tests {
             self.0.clone()
         }
 
+        fn dependencies(&self) -> Vec<ContainerRef> {
+            Vec::new()
+        }
+
+        fn update_result(&self, _guard: &mut ContainerLockGuard) {}
+
+        fn on_result_taken(
+            &self,
+            _guard: &mut ContainerLockGuard,
+            _player: &Player,
+        ) -> Option<ItemStack> {
+            None
+        }
+
+        fn is_result_valid(&self, _guard: &ContainerLockGuard, _player: &Player) -> bool {
+            true
+        }
+    }
+
+    struct DependencyResultHandler {
+        result: ContainerRef,
+        dependency: ContainerRef,
+    }
+
+    impl ResultHandler for DependencyResultHandler {
+        fn result_container(&self) -> ContainerRef {
+            self.result.clone()
+        }
+
+        fn dependencies(&self) -> Vec<ContainerRef> {
+            vec![self.dependency.clone()]
+        }
+
         fn update_result(&self, _guard: &mut ContainerLockGuard) {}
 
         fn on_result_taken(
@@ -1086,6 +1135,30 @@ mod tests {
         let _ = builder.result_slot(NoopResultHandler(container.clone()));
 
         let _ = builder.section_all(container);
+    }
+
+    #[test]
+    fn result_slot_registers_handler_dependencies() {
+        let result = ContainerRef::from(SimpleContainer::new(1).into_shared());
+        let dependency = ContainerRef::from(SimpleContainer::new(1).into_shared());
+        let dependency_id = dependency.container_id();
+        let mut builder = MenuBuilder::new(None, 0);
+        let _ = builder.result_slot(DependencyResultHandler { result, dependency });
+
+        let menu = builder.build(BasicKind);
+        let guard = menu.behavior().lock_all_containers();
+
+        assert!(guard.contains(dependency_id));
+    }
+
+    #[test]
+    #[should_panic(expected = "drain sections cannot contain fake or result slots")]
+    fn drain_rejects_a_result_slot() {
+        let result = ContainerRef::from(SimpleContainer::new(1).into_shared());
+        let mut builder = MenuBuilder::new(None, 0);
+        let section = builder.result_slot(NoopResultHandler(result));
+
+        builder.drain(section);
     }
 
     #[test]
@@ -1184,5 +1257,17 @@ mod tests {
             .map(|slot| slot.get_container_slot())
             .collect();
         assert_eq!(container_slots, vec![2, 0]);
+    }
+
+    #[test]
+    #[should_panic(expected = "section slot backing must match its declared source")]
+    fn custom_kind_rejects_a_mismatched_physical_backing() {
+        let source = ContainerRef::from(SimpleContainer::new(1).into_shared());
+        let other = ContainerRef::from(SimpleContainer::new(1).into_shared());
+        let kind =
+            SectionKind::custom(move |_container, _index| Box::new(NormalSlot::new(&other, 0)));
+        let mut builder = MenuBuilder::new(None, 0);
+
+        let _ = builder.section_with(source, 1, kind);
     }
 }

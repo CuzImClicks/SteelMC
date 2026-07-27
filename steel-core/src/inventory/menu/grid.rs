@@ -360,10 +360,7 @@ enum PlacementKind {
         container: ContainerRef,
     },
     /// Cell `(x, y)` takes `slots[rect.local_index(x, y)]`, each `Some` until flushed.
-    Slots {
-        slots: Vec<Option<Box<dyn Slot>>>,
-        containers: Vec<ContainerRef>,
-    },
+    Slots { slots: Vec<Option<Box<dyn Slot>>> },
 }
 
 /// Maps a placement's row-major cell index to a container slot index.
@@ -630,18 +627,14 @@ impl<'a> GridPlacer<'a> {
 
     /// Adds concrete pre-built slots over `rect`, consumed in row-major order.
     ///
-    /// `containers` declares the containers the slots view, so the menu locks them.
+    /// The menu derives its lock set from each slot's
+    /// [`SlotStorage`](crate::inventory::slots::SlotStorage).
     /// Use [`place_boxed_slots`](Self::place_boxed_slots) for a heterogeneous or
     /// already-erased collection.
     ///
     /// # Panics
     /// If the slot count differs from the rect's cell count, or on the overlap/bounds conditions of [`place`](Self::place).
-    pub fn place_slots<S>(
-        &mut self,
-        rect: Rect,
-        slots: impl IntoIterator<Item = S>,
-        containers: impl IntoIterator<Item = impl Into<ContainerRef>>,
-    ) -> Region
+    pub fn place_slots<S>(&mut self, rect: Rect, slots: impl IntoIterator<Item = S>) -> Region
     where
         S: Slot + 'static,
     {
@@ -650,7 +643,6 @@ impl<'a> GridPlacer<'a> {
             slots
                 .into_iter()
                 .map(|slot| Box::new(slot) as Box<dyn Slot>),
-            containers,
         )
     }
 
@@ -662,7 +654,6 @@ impl<'a> GridPlacer<'a> {
         &mut self,
         rect: Rect,
         slots: impl IntoIterator<Item = Box<dyn Slot>>,
-        containers: impl IntoIterator<Item = impl Into<ContainerRef>>,
     ) -> Region {
         let slots: Vec<Option<Box<dyn Slot>>> = slots.into_iter().map(Some).collect();
         let abs = self.to_abs(rect);
@@ -674,13 +665,7 @@ impl<'a> GridPlacer<'a> {
             abs.h,
             abs.area()
         );
-        self.claim_functional(
-            rect,
-            PlacementKind::Slots {
-                slots,
-                containers: containers.into_iter().map(Into::into).collect(),
-            },
-        )
+        self.claim_functional(rect, PlacementKind::Slots { slots })
     }
 
     /// # Panics
@@ -1054,7 +1039,8 @@ impl MenuBuilder {
                     let container = filler
                         .as_ref()
                         .expect("filler exists when cells are painted");
-                    self.push_boxed_slot(SectionKind::Display.make(container, filler_next));
+                    let slot = SectionKind::Display.make(container, filler_next);
+                    self.push_section_slot(slot, container, filler_next);
                     filler_next += 1;
                 }
                 Cell::Functional(placement) => {
@@ -1065,15 +1051,15 @@ impl MenuBuilder {
                             mapping,
                             kind,
                         } => {
-                            let slot =
-                                kind.make(container, mapping.resolve(rect.local_index(x, y)));
-                            self.push_boxed_slot(slot);
+                            let container_index = mapping.resolve(rect.local_index(x, y));
+                            let slot = kind.make(container, container_index);
+                            self.push_section_slot(slot, container, container_index);
                         }
-                        PlacementKind::Result { slot, .. } => {
-                            self.push_slot(
-                                slot.take()
-                                    .expect("each result placement maps to exactly one slot"),
-                            );
+                        PlacementKind::Result { slot, container } => {
+                            let slot = slot
+                                .take()
+                                .expect("each result placement maps to exactly one slot");
+                            self.push_section_slot(Box::new(slot), container, 0);
                         }
                         PlacementKind::Slots { slots, .. } => {
                             let slot = slots[rect.local_index(x, y)]
@@ -1084,23 +1070,6 @@ impl MenuBuilder {
                     }
                 }
             }
-        }
-
-        for placement in placements {
-            match placement.kind {
-                PlacementKind::Slots { containers, .. } => {
-                    for container in containers {
-                        self.register_container(container);
-                    }
-                }
-                PlacementKind::Section { container, .. }
-                | PlacementKind::Result { container, .. } => {
-                    self.register_container(container);
-                }
-            }
-        }
-        if let Some(filler) = filler {
-            self.register_container(filler);
         }
     }
 }
@@ -1120,6 +1089,10 @@ mod tests {
     impl ResultHandler for NoopResultHandler {
         fn result_container(&self) -> ContainerRef {
             self.0.clone()
+        }
+
+        fn dependencies(&self) -> Vec<ContainerRef> {
+            Vec::new()
         }
 
         fn update_result(&self, _guard: &mut ContainerLockGuard) {}
@@ -1174,7 +1147,7 @@ mod tests {
 
         let mut b = MenuBuilder::new(None, 0);
         let region = b.grid(1, |g| {
-            let region = g.place_slots(Rect::cols(0..4).rows(..), slots, [c.clone()]);
+            let region = g.place_slots(Rect::cols(0..4).rows(..), slots);
             g.paint_all(ItemStack::empty());
             region
         });
@@ -1186,7 +1159,8 @@ mod tests {
         let keys: Vec<usize> = (0..4)
             .map(|menu_slot| {
                 menu.behavior().slots()[menu_slot]
-                    .container_key()
+                    .storage()
+                    .physical_key()
                     .expect("place_slots slots are container-backed")
                     .1
             })
@@ -1214,7 +1188,8 @@ mod tests {
         let keys: Vec<usize> = (0..4)
             .map(|menu_slot| {
                 menu.behavior().slots()[menu_slot]
-                    .container_key()
+                    .storage()
+                    .physical_key()
                     .expect("at_indices slots are container-backed")
                     .1
             })
@@ -1255,7 +1230,8 @@ mod tests {
         let keys: Vec<usize> = (0..2)
             .map(|menu_slot| {
                 menu.behavior().slots()[menu_slot]
-                    .container_key()
+                    .storage()
+                    .physical_key()
                     .expect("custom factory slots are container-backed")
                     .1
             })
@@ -1271,7 +1247,7 @@ mod tests {
 
         let mut b = MenuBuilder::new(None, 0);
         b.grid(1, |g| {
-            g.place_slots(Rect::cols(0..4).rows(..), slots, [c.clone()]);
+            g.place_slots(Rect::cols(0..4).rows(..), slots);
             g.paint_all(ItemStack::empty());
         });
     }
@@ -1413,7 +1389,7 @@ mod tests {
         ];
         let mut b = MenuBuilder::new(None, 0);
         b.grid(1, |g| {
-            let _ = g.place_boxed_slots(Rect::cols(0..2).rows(0), slots, [container.clone()]);
+            let _ = g.place_boxed_slots(Rect::cols(0..2).rows(0), slots);
             g.paint_all(ItemStack::empty());
         });
 

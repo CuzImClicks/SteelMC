@@ -32,9 +32,12 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
                     "you cannot use this command from the console",
                 ));
             };
+            let server = Arc::clone(ctx.source().server());
+            let player = Arc::clone(player);
+            let menu_player = Arc::clone(&player);
 
-            player.open_menu("Domains", |container_id, world| {
-                domain_menu(container_id, player.clone(), world, ctx.source())
+            player.open_menu("Domains", move |context| {
+                domain_menu(context.container_id, menu_player, context.world, &server)
             });
 
             Ok(1)
@@ -71,11 +74,9 @@ fn domain_menu(
     container_id: u8,
     player: Arc<Player>,
     current_world: &Arc<World>,
-    source: &CommandSource,
+    server: &Arc<Server>,
 ) -> Menu {
     let mut b = MenuBuilder::new(&vanilla_menu_types::GENERIC_9X6, container_id);
-
-    let server = source.server();
 
     let domain_names: Vec<String> = server
         .worlds

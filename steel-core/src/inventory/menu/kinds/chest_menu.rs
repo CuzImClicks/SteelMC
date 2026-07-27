@@ -29,7 +29,7 @@ pub fn chest(
     );
 
     let mut builder = MenuBuilder::new(menu_type_for_rows(rows), container_id);
-    let chest = builder.section_all(&container);
+    let chest = builder.section(&container, rows * 9);
     let player = builder.player_inventory(&inventory);
 
     builder.route(chest, player.all(), FillDirection::Backward);
@@ -72,5 +72,23 @@ impl MenuKind for ChestKind {
     /// Returns true if the backing container is still valid for the player.
     fn still_valid(&self, _behavior: &MenuBehavior, player: &Player) -> bool {
         self.container.still_valid(player)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use steel_utils::locks::IntoShared as _;
+
+    use super::*;
+    use crate::inventory::container::SimpleContainer;
+
+    #[test]
+    fn chest_uses_exactly_the_rows_requested_from_oversized_container() {
+        let inventory = PlayerInventory::new().into_shared();
+        let container = SimpleContainer::new(18).into_shared();
+
+        let menu = chest(inventory, 1, container, 1);
+
+        assert_eq!(menu.behavior().slot_count(), 9 + 36);
     }
 }

@@ -19,10 +19,12 @@ use steel_registry::{
 use steel_utils::{
     BlockPos, Identifier, java,
     locks::{IntoShared, Shared, SyncMutex},
+    text::DisplayResolutor,
 };
 use text_components::TextComponent;
 
 use crate::{
+    behavior::ITEM_BEHAVIORS,
     inventory::{
         container::{ResultContainer, SimpleContainer},
         prelude::*,
@@ -283,7 +285,7 @@ impl AnvilKind {
         // Renaming
         let item_name = self.item_name.lock();
         if let Some(name) = item_name.as_deref().filter(|name| !java::is_blank(name)) {
-            if name != first.hover_name().to_string() {
+            if name != ITEM_BEHAVIORS.hover_name(first).to_plain(&DisplayResolutor) {
                 rename_cost = 1;
                 additional_cost += rename_cost as u32;
                 result.set(CUSTOM_NAME, TextComponent::from(name.to_string()));
