@@ -12,7 +12,7 @@ use crate::{
 };
 
 type MayPlace = Box<dyn Fn(usize, &ItemStack) -> bool + Send + Sync>;
-type MayPickup = Box<dyn Fn(usize, &ContainerLockGuard, &Player, &ItemStack) -> bool + Send + Sync>;
+type MayPickup = Box<dyn Fn(usize, &ItemStack, &ContainerLockGuard, &Player) -> bool + Send + Sync>;
 
 /// The predicates behind a [`RestrictedSlot`], shared by every slot of a
 /// section so a slot costs one pointer rather than one per predicate.
@@ -33,7 +33,7 @@ impl RestrictedRules {
 
     pub(crate) fn guarded(
         may_place: impl Fn(usize, &ItemStack) -> bool + Send + Sync + 'static,
-        may_pickup: impl Fn(usize, &ContainerLockGuard, &Player, &ItemStack) -> bool
+        may_pickup: impl Fn(usize, &ItemStack, &ContainerLockGuard, &Player) -> bool
         + Send
         + Sync
         + 'static,
@@ -72,7 +72,7 @@ impl RestrictedSlot {
         container: impl Into<ContainerRef>,
         index: usize,
         may_place: impl Fn(usize, &ItemStack) -> bool + Send + Sync + 'static,
-        may_pickup: impl Fn(usize, &ContainerLockGuard, &Player, &ItemStack) -> bool
+        may_pickup: impl Fn(usize, &ItemStack, &ContainerLockGuard, &Player) -> bool
         + Send
         + Sync
         + 'static,
@@ -118,9 +118,9 @@ impl Slot for RestrictedSlot {
         self.rules.may_pickup.as_ref().is_none_or(|it| {
             it(
                 self.base.get_container_slot(),
+                self.base.get_item(guard),
                 guard,
                 player,
-                self.base.get_item(guard),
             )
         })
     }

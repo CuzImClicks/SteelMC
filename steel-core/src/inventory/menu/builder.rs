@@ -331,7 +331,7 @@ impl SectionKind {
     /// only come out while `may_pickup` returns true.
     pub fn guarded(
         may_place: impl Fn(usize, &ItemStack) -> bool + Send + Sync + 'static,
-        may_pickup: impl Fn(usize, &ContainerLockGuard, &Player, &ItemStack) -> bool
+        may_pickup: impl Fn(usize, &ItemStack, &ContainerLockGuard, &Player) -> bool
         + Send
         + Sync
         + 'static,
@@ -853,7 +853,7 @@ impl MenuBuilder {
     ///
     /// Pending logical inventory updates are deferred while the
     /// menu is open and the slots are restored when it closes.
-    pub const fn overrides_player_slots(&mut self) -> &mut Self {
+    pub const fn override_player_slots(&mut self) -> &mut Self {
         self.overrides_player_slots = true;
         self
     }

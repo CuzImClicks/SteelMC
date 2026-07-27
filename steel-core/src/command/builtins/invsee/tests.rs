@@ -508,7 +508,7 @@ fn overriding_menu_defers_main_inventory_sync_until_close() {
         .open_menu("Overlay", move |container_id, _world| {
             let mut builder = MenuBuilder::new(&vanilla_menu_types::GENERIC_9X4, container_id);
             builder.section_with(fake_slots, 72, SectionKind::Display);
-            builder.overrides_player_slots();
+            builder.override_player_slots();
             builder.build(BasicKind {})
         });
     recording.packets.lock().clear();
@@ -550,7 +550,7 @@ fn replacing_overriding_menu_keeps_main_inventory_sync_deferred() {
             .open_menu(title, move |container_id, _world| {
                 let mut builder = MenuBuilder::new(&vanilla_menu_types::GENERIC_9X4, container_id);
                 builder.section_with(fake_slots, 72, SectionKind::Display);
-                builder.overrides_player_slots();
+                builder.override_player_slots();
                 builder.build(BasicKind {})
             });
         recording.player.request_inventory_resync([0]);

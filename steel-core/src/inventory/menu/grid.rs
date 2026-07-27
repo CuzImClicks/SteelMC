@@ -494,7 +494,7 @@ impl PlacementBuilder<'_, '_> {
     pub fn guard(
         self,
         may_place: impl Fn(usize, &ItemStack) -> bool + Send + Sync + 'static,
-        may_pickup: impl Fn(usize, &ContainerLockGuard, &Player, &ItemStack) -> bool
+        may_pickup: impl Fn(usize, &ItemStack, &ContainerLockGuard, &Player) -> bool
         + Send
         + Sync
         + 'static,
