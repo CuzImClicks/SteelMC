@@ -11,9 +11,10 @@ use crate::{
 pub trait ResultHandler: Send + Sync {
     /// The container the result is written to and read from.
     ///
-    /// [`MenuBuilder::result_slot`](crate::inventory::menu::MenuBuilder::result_slot)
-    /// derives the slot's container from this, so the handler's writes and the
-    /// slot's reads can never target different containers.
+    /// [`ResultSlot::new`](crate::inventory::slots::ResultSlot::new) derives the
+    /// slot's container from this. Menu builders reuse that exact reference for
+    /// validation and locking, so handler writes and slot reads cannot target
+    /// different containers.
     fn result_container(&self) -> ContainerRef;
 
     /// Recalculate the result based on current inputs.
