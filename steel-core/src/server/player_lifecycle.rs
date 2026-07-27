@@ -1,5 +1,7 @@
 use std::ptr;
 
+use crate::player::connection::NetworkConnection;
+
 use super::{
     Arc, CLogin, CSetDefaultSpawnPosition, CommonPlayerSpawnInfo, DVec3, DomainPlayerData,
     DomainPlayerState, DomainResidenceToken, EnderPearlRestoreJob, Entity, IMMEDIATE_RESPAWN,
@@ -446,6 +448,18 @@ impl Server {
 
         let world = player.get_world();
         world.contains_player(player).then_some(world)
+    }
+
+    /// Returns the live world in which a player may participate in gameplay commands.
+    ///
+    /// A queued domain switch still has source-world membership until the safe
+    /// point, but gameplay work must stop as soon as that transition owns the
+    /// player. Finalization is live again and therefore remains available.
+    pub(crate) fn command_world_for_player(&self, player: &Player) -> Option<Arc<World>> {
+        if player.connection.closed() || player.domain_switch_blocks_gameplay() {
+            return None;
+        }
+        self.live_world_for_player(player)
     }
 
     /// Returns the total number of players currently online across all worlds.

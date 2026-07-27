@@ -331,6 +331,11 @@ impl Player {
         self.lifecycle.lock().domain_switching()
     }
 
+    /// Returns whether the current domain-switch phase blocks gameplay work.
+    pub(crate) fn domain_switch_blocks_gameplay(&self) -> bool {
+        self.lifecycle.lock().domain_switch_blocks_gameplay()
+    }
+
     /// Returns whether the current domain phase accepts this packet class.
     pub(crate) fn domain_switch_allows_packet(&self, handshake_packet: bool) -> bool {
         self.lifecycle

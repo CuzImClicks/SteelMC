@@ -23,7 +23,7 @@ use crate::command::execution::{
     CommandExecutionContext, CommandResultCallback, CommandSource, ExecutionCommandSource,
     ExecutionStop,
 };
-use crate::command::sender::CommandSender;
+use crate::command::sender::{CommandExecutionOwner, CommandSender};
 use crate::command::storage::DomainCommandStorage;
 use crate::command::{
     COMMAND_REQUESTS_PER_TICK, COMMAND_RESUMPTIONS_PER_TICK, CommandCompletion, CommandDispatcher,
@@ -769,8 +769,10 @@ impl Server {
         sender: CommandSender,
         command: String,
     ) -> Result<(), CommandQueueFull> {
-        self.command_requests
-            .submit(CommandRequest::Execute { sender, command })
+        self.command_requests.submit(CommandRequest::Execute {
+            owner: CommandExecutionOwner::capture(sender, self),
+            command,
+        })
     }
 
     pub(crate) fn submit_command_suggestions(
@@ -780,7 +782,7 @@ impl Server {
         input: String,
     ) -> Result<(), CommandQueueFull> {
         self.command_requests.submit(CommandRequest::Suggestions {
-            player,
+            owner: CommandExecutionOwner::capture(CommandSender::Player(player), self),
             transaction_id,
             input,
         })
@@ -803,6 +805,9 @@ impl Server {
         sender: CommandSender,
         input: &str,
     ) -> Vec<CommandCompletion> {
+        if !CommandExecutionOwner::capture(sender.clone(), self).is_current(self) {
+            return Vec::new();
+        }
         match self.build_command_suggestions(sender, input) {
             Ok(suggestions) => {
                 let range = suggestions.range();

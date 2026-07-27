@@ -23,8 +23,11 @@ use text_components::TextComponent;
 use tokio::{fs, runtime::Builder, task::JoinSet, time::sleep};
 use uuid::Uuid;
 
-use crate::command::execution::{CommandPermissionSource, CommandSource};
-use crate::command::sender::CommandSender;
+use crate::command::execution::{
+    CommandArgumentSource, CommandPermissionSource, CommandSource, ExecutionCommandSource,
+    parse_entity_selector_text,
+};
+use crate::command::sender::{CommandExecutionOwner, CommandSender};
 use crate::config::{ResolvedDomainConfig, RuntimeConfig, StorageSelection};
 use crate::entity::{DEFAULT_MAX_AIR_SUPPLY, Entity, EntityBase, LivingEntity as _, SharedEntity};
 use crate::permission::{
@@ -35,6 +38,7 @@ use crate::permission::{
 use crate::player::connection::NetworkConnection;
 use crate::player::player_data::PersistentSlot;
 use crate::player::{Player, PlayerConnection, ResetReason};
+use crate::portal::WorldChangeRequest;
 use crate::test_support::{
     TestPlayerBuilder, fresh_test_world, fresh_test_world_in_domain, test_world,
 };
@@ -45,16 +49,17 @@ use super::known_players::{
 };
 use super::player_admission::PendingPlayerJoin;
 use super::{
-    AsyncMutex, CancellationToken, CommandRegistry, CommandRequestQueue, DomainCommandStorage,
-    DomainPlayerData, DomainPlayerState, DomainScoreboards, EnderPearlRestoreJob, FxHashMap,
-    KeyStore, KnownPlayerCacheState, KnownPlayers, Notify, PacketProcessor, PersistentEnderPearl,
-    PersistentEntity, PersistentPlayerData, PersistentRootVehicle, PlayerDataStorage,
-    PlayerDisconnectQueue, PlayerJoinQueue, PlayerMap, PreparedSpawn, RegistryCache,
-    RootVehicleRestoreJob, Server, ServerJobQueue, SyncMutex, SyncRwLock, TabListTickStats,
-    TickRateManager, UnpreparedDomainPlayerData, UnpreparedDomainPlayerState, WorldMap,
-    can_entity_return_from_end_to_overworld, cap_positive_thread_count,
-    create_registered_dispatcher, is_allowed_to_enter_portal_target, is_end_return_transition,
-    offline_uuid, packet_workers_for_available, validate_player_permission_group_update,
+    AsyncMutex, CancellationToken, CommandRegistry, CommandRequest, CommandRequestQueue,
+    DomainCommandStorage, DomainPlayerData, DomainPlayerState, DomainScoreboards,
+    EnderPearlRestoreJob, FxHashMap, KeyStore, KnownPlayerCacheState, KnownPlayers, Notify,
+    PacketProcessor, PersistentEnderPearl, PersistentEntity, PersistentPlayerData,
+    PersistentRootVehicle, PlayerDataStorage, PlayerDisconnectQueue, PlayerJoinQueue, PlayerMap,
+    PreparedSpawn, RegistryCache, RootVehicleRestoreJob, Server, ServerJobQueue, SyncMutex,
+    SyncRwLock, TabListTickStats, TickRateManager, UnpreparedDomainPlayerData,
+    UnpreparedDomainPlayerState, WorldMap, can_entity_return_from_end_to_overworld,
+    cap_positive_thread_count, create_registered_dispatcher, is_allowed_to_enter_portal_target,
+    is_end_return_transition, offline_uuid, packet_workers_for_available,
+    validate_player_permission_group_update,
 };
 
 struct TestConnection {
@@ -1218,6 +1223,395 @@ fn execute_as_entity_transform_uses_receiver_with_initiator_permissions() {
             receiver,
         ));
         drop(server);
+        if let Err(error) = fs::remove_dir_all(&storage_root).await {
+            panic!("test storage should be removed: {error}");
+        }
+    });
+}
+
+#[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "one lifecycle test compares gameplay and administrative command ownership through every domain phase"
+)]
+fn command_gameplay_availability_tracks_exact_domain_residence() {
+    let world = fresh_test_world_in_domain("alpha", "spawn");
+    let remote_world = fresh_test_world_in_domain("beta", "spawn");
+    let domains = [
+        ResolvedDomainConfig {
+            name: "alpha".to_owned(),
+            default_world: world.key.clone(),
+            worlds: vec![world.key.clone()],
+        },
+        ResolvedDomainConfig {
+            name: "beta".to_owned(),
+            default_world: remote_world.key.clone(),
+            worlds: vec![remote_world.key.clone()],
+        },
+    ];
+    let loaded_worlds = [Arc::clone(&world), Arc::clone(&remote_world)];
+    let storage_root = test_storage_root("command-domain-residence");
+    let runtime = Builder::new_current_thread().enable_all().build();
+    let Ok(runtime) = runtime else {
+        panic!("test runtime should initialize");
+    };
+    runtime.block_on(async {
+        let server = test_server_with_worlds(
+            "alpha".to_owned(),
+            &domains,
+            &loaded_worlds,
+            PermissionSubjectIndex::new(),
+            &storage_root,
+        )
+        .await;
+        let Ok(server) = server else {
+            panic!("test server should initialize");
+        };
+        let uuid = Uuid::from_u128(40);
+        let player = test_player(&server, Arc::clone(&world), uuid);
+        assert!(world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+        let pre_admission_owner =
+            CommandExecutionOwner::capture(CommandSender::Player(Arc::clone(&player)), &server);
+        assert!(
+            !pre_admission_owner.is_current(&server),
+            "world membership alone must not admit command work"
+        );
+        assert!(server.online_players.insert(Arc::clone(&player)));
+        let _ = player.mark_joined_world();
+        assert!(
+            !pre_admission_owner.is_current(&server),
+            "an owner rejected at capture must not become valid after admission"
+        );
+        let (remote, _) = test_player_with_packets(
+            &server,
+            Arc::clone(&remote_world),
+            Uuid::from_u128(42),
+            "Remote",
+            42,
+        );
+        assert!(server.online_players.insert(Arc::clone(&remote)));
+        assert!(remote_world.add_player(Arc::clone(&remote), ResetReason::InitialJoin));
+        let _ = remote.mark_joined_world();
+
+        let selector = parse_entity_selector_text("@a");
+        let Ok(selector) = selector else {
+            panic!("all-player selector should parse");
+        };
+        let spatial_selector = parse_entity_selector_text("@a[x=0]");
+        let Ok(spatial_selector) = spatial_selector else {
+            panic!("spatial all-player selector should parse");
+        };
+        let source = CommandSource::new(CommandSender::Console, Arc::clone(&server));
+        let transformed = source.with_entity(Arc::clone(&player) as SharedEntity);
+        let owner =
+            CommandExecutionOwner::capture(CommandSender::Player(Arc::clone(&player)), &server);
+
+        assert!(owner.is_current(&server));
+        assert!(transformed.execution_is_current());
+        assert_eq!(
+            selector.find_players(&source).map(|players| players.len()),
+            Ok(1)
+        );
+        assert_eq!(
+            selector
+                .find_online_profile_players(&source)
+                .map(|players| players.len()),
+            Ok(2),
+            "administrative profile selectors span Steel domains"
+        );
+        assert_eq!(
+            spatial_selector
+                .find_online_profile_players(&source)
+                .map(|players| players.len()),
+            Ok(1),
+            "spatial profile selectors use the exact source world"
+        );
+        assert_eq!(
+            source.selector_player_names(),
+            vec![player.gameprofile.name.clone()]
+        );
+        assert!(
+            server
+                .submit_command(
+                    CommandSender::Player(Arc::clone(&player)),
+                    "list".to_owned()
+                )
+                .is_ok()
+        );
+        assert!(
+            server
+                .submit_command_suggestions(Arc::clone(&player), 1, "/".to_owned())
+                .is_ok()
+        );
+
+        let Some(pending_token) = player.begin_pending_world_change() else {
+            panic!("test player should acquire the relocation lease");
+        };
+        assert!(player.begin_domain_switch(pending_token));
+        assert!(server.command_world_for_player(&player).is_none());
+        assert!(!owner.is_current(&server));
+        assert!(!transformed.execution_is_current());
+        assert_eq!(
+            selector.find_players(&source).map(|players| players.len()),
+            Ok(0)
+        );
+        assert_eq!(
+            selector
+                .find_online_profile_players(&source)
+                .map(|players| players.len()),
+            Ok(2),
+            "administrative profile selectors retain globally online players"
+        );
+        assert!(source.selector_player_names().is_empty());
+        assert_eq!(server.get_players().len(), 2);
+        for _ in 0..2 {
+            let Some(request) = server.command_requests.pop_front_runnable(|_| true) else {
+                panic!("both captured command requests should remain queued");
+            };
+            let owner = match request {
+                CommandRequest::Execute { owner, .. }
+                | CommandRequest::Suggestions { owner, .. } => owner,
+            };
+            assert!(
+                !owner.is_current(&server),
+                "requests captured before the transition must be rejected"
+            );
+        }
+
+        assert!(player.mark_domain_switch_detached(pending_token));
+        let Some((_data, _residence)) = world.detach_player_for_domain_switch(&player) else {
+            panic!("test player should detach from its source world");
+        };
+        let detached_owner =
+            CommandExecutionOwner::capture(CommandSender::Player(Arc::clone(&player)), &server);
+        assert!(player.mark_domain_switch_target_handshake(pending_token));
+        assert!(server.command_world_for_player(&player).is_none());
+        assert_eq!(
+            selector
+                .find_online_profile_players(&source)
+                .map(|players| players.len()),
+            Ok(2),
+            "non-spatial profile selectors retain detached online players"
+        );
+        assert_eq!(
+            spatial_selector
+                .find_online_profile_players(&source)
+                .map(|players| players.len()),
+            Ok(0),
+            "spatial profile selectors require live source-world membership"
+        );
+        assert!(
+            server
+                .submit_command(
+                    CommandSender::Player(Arc::clone(&player)),
+                    "list".to_owned()
+                )
+                .is_ok()
+        );
+        assert!(world.add_player(Arc::clone(&player), ResetReason::WorldChange));
+        assert!(player.mark_domain_switch_live(pending_token));
+
+        assert!(server.command_world_for_player(&player).is_some());
+        assert!(
+            !detached_owner.is_current(&server),
+            "work admitted while detached must not become valid after target admission"
+        );
+        let Some(CommandRequest::Execute {
+            owner: handshake_owner,
+            ..
+        }) = server.command_requests.pop_front_runnable(|_| true)
+        else {
+            panic!("the handshake request should remain queued for rejection");
+        };
+        assert!(
+            !handshake_owner.is_current(&server),
+            "public submissions during the target handshake must stay rejected"
+        );
+        assert!(
+            !owner.is_current(&server),
+            "work captured before detachment must stay stale after target admission"
+        );
+        assert!(!transformed.execution_is_current());
+        assert_eq!(
+            selector.find_players(&source).map(|players| players.len()),
+            Ok(1)
+        );
+        let target_owner =
+            CommandExecutionOwner::capture(CommandSender::Player(Arc::clone(&player)), &server);
+        assert!(target_owner.is_current(&server));
+        assert!(
+            server
+                .submit_command_suggestions(Arc::clone(&player), 2, "/old".to_owned())
+                .is_ok()
+        );
+
+        assert!(player.finish_domain_switch(pending_token));
+        assert!(player.finish_pending_world_change(pending_token));
+        world.remove_player_for_world_change(&player);
+        assert!(server.online_players.remove_player_sync(&player).is_some());
+        let replacement = test_player(&server, Arc::clone(&world), uuid);
+        assert!(server.online_players.insert(Arc::clone(&replacement)));
+        assert!(world.add_player(Arc::clone(&replacement), ResetReason::InitialJoin));
+        assert!(
+            !target_owner.is_current(&server),
+            "a replacement login must not inherit queued work from the old Arc"
+        );
+        assert!(
+            CommandExecutionOwner::capture(
+                CommandSender::Player(Arc::clone(&replacement)),
+                &server
+            )
+            .is_current(&server)
+        );
+        assert!(
+            server
+                .submit_command_suggestions(Arc::clone(&replacement), 3, "/new".to_owned())
+                .is_ok()
+        );
+        let mut suggestion_owners_are_current = Vec::new();
+        for _ in 0..2 {
+            let Some(CommandRequest::Suggestions { owner, .. }) =
+                server.command_requests.pop_front_runnable(|_| true)
+            else {
+                panic!("replacement suggestions must not coalesce with the old exact session");
+            };
+            suggestion_owners_are_current.push(owner.is_current(&server));
+        }
+        assert_eq!(suggestion_owners_are_current, [false, true]);
+
+        drop((
+            replacement,
+            player,
+            source,
+            transformed,
+            pre_admission_owner,
+            owner,
+            detached_owner,
+            target_owner,
+            remote,
+            server,
+        ));
+        if let Err(error) = fs::remove_dir_all(&storage_root).await {
+            panic!("test storage should be removed: {error}");
+        }
+    });
+}
+
+#[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "one routing test compares stale, repeated, same-domain, and cross-domain selections"
+)]
+fn player_world_selection_uses_one_token_owned_route() {
+    let source_world = fresh_test_world_in_domain("alpha", "source");
+    let sibling_world = fresh_test_world_in_domain("alpha", "sibling");
+    let stale_sibling_world = fresh_test_world_in_domain("alpha", "sibling");
+    let target_world = fresh_test_world_in_domain("beta", "target");
+    let domains = [
+        ResolvedDomainConfig {
+            name: "alpha".to_owned(),
+            default_world: source_world.key.clone(),
+            worlds: vec![source_world.key.clone(), sibling_world.key.clone()],
+        },
+        ResolvedDomainConfig {
+            name: "beta".to_owned(),
+            default_world: target_world.key.clone(),
+            worlds: vec![target_world.key.clone()],
+        },
+    ];
+    let loaded_worlds = [
+        Arc::clone(&source_world),
+        Arc::clone(&sibling_world),
+        Arc::clone(&target_world),
+    ];
+    let storage_root = test_storage_root("player-world-selection");
+    let runtime = Builder::new_current_thread().enable_all().build();
+    let Ok(runtime) = runtime else {
+        panic!("test runtime should initialize");
+    };
+    runtime.block_on(async {
+        let server = test_server_with_worlds(
+            "alpha".to_owned(),
+            &domains,
+            &loaded_worlds,
+            PermissionSubjectIndex::new(),
+            &storage_root,
+        )
+        .await;
+        let Ok(server) = server else {
+            panic!("test server should initialize");
+        };
+        let player = test_player(&server, Arc::clone(&source_world), Uuid::from_u128(41));
+        assert!(server.online_players.insert(Arc::clone(&player)));
+        assert!(source_world.add_player(Arc::clone(&player), ResetReason::InitialJoin));
+        let _ = player.mark_joined_world();
+
+        assert!(
+            server
+                .queue_player_world_selection(Arc::clone(&player), Arc::clone(&stale_sibling_world))
+                .is_err()
+        );
+        assert!(!player.is_world_change_pending());
+
+        assert!(
+            server
+                .queue_player_world_selection(Arc::clone(&player), Arc::clone(&sibling_world))
+                .is_ok(),
+            "world selection is authorization-neutral after command admission"
+        );
+        assert!(player.is_world_change_pending());
+        assert!(
+            server
+                .queue_player_world_selection(Arc::clone(&player), Arc::clone(&target_world))
+                .is_err(),
+            "the relocation lease must reject a repeated selection"
+        );
+        let sibling_token = {
+            let mut pending = server.pending_world_changes.lock();
+            let Some((
+                _,
+                WorldChangeRequest::WorldSpawn {
+                    target_world,
+                    pending_token,
+                },
+            )) = pending.pop()
+            else {
+                panic!("same-domain selection should queue a world-spawn transition");
+            };
+            assert!(Arc::ptr_eq(&target_world, &sibling_world));
+            pending_token
+        };
+        assert!(player.finish_pending_world_change(sibling_token));
+
+        assert!(
+            server
+                .queue_player_world_selection(Arc::clone(&player), Arc::clone(&source_world))
+                .is_ok()
+        );
+        server.process_world_changes(0, true);
+        assert!(!player.is_world_change_pending());
+        assert!(source_world.contains_player(&player));
+
+        assert!(
+            server
+                .queue_player_world_selection(Arc::clone(&player), Arc::clone(&target_world))
+                .is_ok()
+        );
+        let request = server.pending_domain_switches.lock().pop();
+        let Some(request) = request else {
+            panic!("cross-domain selection should queue a domain switch");
+        };
+        assert_eq!(request.target_domain, "beta");
+        assert!(
+            request
+                .target_world
+                .as_ref()
+                .is_some_and(|world| Arc::ptr_eq(world, &target_world))
+        );
+        assert!(player.finish_domain_switch(request.pending_token));
+        assert!(player.finish_pending_world_change(request.pending_token));
+
+        drop((player, server));
         if let Err(error) = fs::remove_dir_all(&storage_root).await {
             panic!("test storage should be removed: {error}");
         }

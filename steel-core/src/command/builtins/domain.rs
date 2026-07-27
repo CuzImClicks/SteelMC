@@ -9,7 +9,7 @@ use steel_registry::{
 use steel_utils::Identifier;
 use text_components::TextComponent;
 
-use crate::{inventory::prelude::*, portal::WorldChangeRequest, server::Server, world::World};
+use crate::{inventory::prelude::*, server::Server, world::World};
 
 use super::super::{
     brigadier::{CommandNodeBuilder, CommandSyntaxError},
@@ -39,28 +39,29 @@ fn command() -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
 
             Ok(1)
         })
-        .then(argument("domain", SteelArgumentType::domain()).executes(switch_domain))
+        .then(argument("world", SteelArgumentType::world()).executes(switch_world))
 }
 
-fn switch_domain(context: &SteelCommandContext<CommandSource>) -> Result<i32, CommandSyntaxError> {
+fn switch_world(context: &SteelCommandContext<CommandSource>) -> Result<i32, CommandSyntaxError> {
     let source = context.source();
     let Some(player) = source.player() else {
         return Err(CommandSyntaxError::dynamic(
             "This command can only be used by a player",
         ));
     };
-    let Some(domain) = context.domain("domain") else {
+    let Some(world) = context.world_argument("world") else {
         return Err(CommandSyntaxError::dynamic(
-            "Parsed domain is missing from the command context",
+            "Parsed world is missing from the command context",
         ));
     };
+    let world = world.resolve(source)?;
     source
         .server()
-        .queue_domain_switch(Arc::clone(player), domain.to_owned())
+        .queue_player_world_selection(Arc::clone(player), Arc::clone(&world))
         .map_err(CommandSyntaxError::dynamic)?;
 
     source.send_success(
-        &TextComponent::plain(format!("Switching to domain {domain}")),
+        &TextComponent::plain(format!("Switching to world {}", world.key)),
         true,
     );
     Ok(1)
@@ -199,26 +200,21 @@ impl MenuKind for DomainMenuKind {
             return ClickOutcome::Consume;
         }
 
-        let world = &worlds[index - section.start()];
+        let Some(world) = worlds.get(index - section.start()) else {
+            return ClickOutcome::Consume;
+        };
 
-        if world.domain() == self.player.get_world().domain() {
-            self.server.queue_world_change(
-                self.player.clone(),
-                WorldChangeRequest::WorldSpawn {
-                    target_world: world.clone(),
-                },
-            );
-        } else {
-            match self
-                .server
-                .queue_domain_switch_to_world(self.player.clone(), world.clone())
-            {
-                Ok(()) => {}
-                Err(e) => {
-                    tracing::error!(e);
-                }
-            }
+        if !matches!(click, Click::Pickup { .. }) {
+            return ClickOutcome::Consume;
         }
+
+        if let Err(error) = self
+            .server
+            .queue_player_world_selection(Arc::clone(&self.player), Arc::clone(world))
+        {
+            tracing::debug!(%error, target_world = %world.key, "domain menu selection was rejected");
+        }
+        self.player.close_container();
         ClickOutcome::Consume
     }
 }
@@ -249,22 +245,20 @@ mod tests {
     }
 
     #[test]
-    fn domain_graph_uses_the_configured_domain_argument() {
+    fn domain_graph_uses_the_loaded_world_argument() {
         init_test_registry();
         let Ok(dispatcher) = create_dispatcher() else {
             panic!("built-in commands should register");
         };
         let root = child(&dispatcher, dispatcher.root(), "domain");
-        let domain = child(&dispatcher, root, "domain");
+        let world = child(&dispatcher, root, "world");
         assert_eq!(
-            dispatcher
-                .node(domain)
-                .and_then(|node| node.argument_type()),
-            Some(&SteelArgumentType::domain())
+            dispatcher.node(world).and_then(|node| node.argument_type()),
+            Some(&SteelArgumentType::world())
         );
-        let Some(domain) = dispatcher.node(domain) else {
-            panic!("domain argument should exist");
+        let Some(world) = dispatcher.node(world) else {
+            panic!("world argument should exist");
         };
-        assert!(domain.is_executable());
+        assert!(world.is_executable());
     }
 }
