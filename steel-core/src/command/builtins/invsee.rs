@@ -36,10 +36,9 @@ pub(super) fn registration() -> Result<CommandRegistration<CommandSource>, Comma
             source,
         }
     })?;
-    let command_access = access_permission.clone();
     let command_modify = modify_permission.clone();
     Ok(
-        CommandRegistration::new(id, move |_| command(command_access, command_modify))
+        CommandRegistration::new(id, move |_| command(command_modify))
             .permission(access_permission),
     )
 }
@@ -51,7 +50,6 @@ fn invsee_permissions() -> Result<(PermissionExpr, PermissionExpr), PermissionKe
 }
 
 fn command(
-    access_permission: PermissionExpr,
     modify_permission: PermissionExpr,
 ) -> CommandNodeBuilder<CommandSource, SteelCommandRuntime> {
     literal("invsee").then(
@@ -63,14 +61,12 @@ fn command(
                 )));
             };
             ensure_same_domain(source, &target)?;
+            // Command permissions belong to the initiating authorization even
+            // when `/execute as` changes which player receives the menu. Capture
+            // the resulting mode once when the menu opens.
             let modify = ctx.source().has_permission(&modify_permission);
-            let required_permission = if modify {
-                modify_permission.clone()
-            } else {
-                access_permission.clone()
-            };
             source.open_menu(target.display_name(), |container_id, _world| {
-                invsee(container_id, source, &target, modify, required_permission)
+                invsee(container_id, source, &target, modify)
             });
             Ok(1)
         }),
@@ -93,13 +89,7 @@ fn ensure_same_domain(source: &Player, target: &Player) -> Result<(), CommandSyn
     ))
 }
 
-fn invsee(
-    container_id: u8,
-    source: &Arc<Player>,
-    target: &Arc<Player>,
-    modify: bool,
-    required_permission: PermissionExpr,
-) -> Menu {
+fn invsee(container_id: u8, source: &Arc<Player>, target: &Arc<Player>, modify: bool) -> Menu {
     let mut b = MenuBuilder::new(&vanilla_menu_types::GENERIC_9X5, container_id);
 
     let kind = if modify {
@@ -159,7 +149,6 @@ fn invsee(
         target: Arc::downgrade(target),
         target_inventory_id: ContainerId::from_arc(&target.inventory),
         domain: target.get_world().domain().into(),
-        required_permission,
         modify,
         target_slots,
         crafting,
@@ -172,7 +161,6 @@ struct InvseeMenuKind {
     target: Weak<Player>,
     target_inventory_id: ContainerId,
     domain: Box<str>,
-    required_permission: PermissionExpr,
     modify: bool,
     target_slots: Range<usize>,
     crafting: Section,
@@ -256,8 +244,7 @@ impl MenuKind for InvseeMenuKind {
         };
         let player_world = player.get_world();
         let target_world = target.get_world();
-        player.has_permission(&self.required_permission)
-            && !player.is_domain_switching()
+        !player.is_domain_switching()
             && !target.connection.closed()
             && !target.is_domain_switching()
             && player_world.domain() == self.domain.as_ref()

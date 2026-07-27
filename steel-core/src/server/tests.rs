@@ -742,6 +742,89 @@ fn command_world_scope_survives_entity_transforms() {
     });
 }
 
+#[test]
+fn execute_as_entity_transform_uses_receiver_with_initiator_permissions() {
+    let world = Arc::clone(test_world());
+    let runtime = Builder::new_current_thread().enable_all().build();
+    let Ok(runtime) = runtime else {
+        panic!("test runtime should initialize");
+    };
+    runtime.block_on(async {
+        let initiator_uuid = Uuid::from_u128(31);
+        let receiver_uuid = Uuid::from_u128(32);
+        let invsee = PermissionExpr::key(permission_key("steel.command.invsee"));
+        let modify_key = permission_key("steel.command.invsee.modify");
+        let modify = PermissionExpr::key(modify_key.clone());
+        let access = PermissionExpr::Any(vec![invsee, modify.clone()]);
+        let mut published_states = PermissionSubjectIndex::new();
+        published_states.set(
+            initiator_uuid,
+            PermissionSubjectState::new(
+                Vec::new(),
+                PermissionSet::from_entries([PermissionEntry::allow(modify_key)]),
+            ),
+        );
+        let storage_root = test_storage_root("command-entity-transform-authorization");
+        let server = test_server(Arc::clone(&world), published_states, &storage_root).await;
+        let Ok(server) = server else {
+            panic!("test server should initialize");
+        };
+        let (initiator, _) =
+            test_player_with_packets(&server, Arc::clone(&world), initiator_uuid, "Initiator", 31);
+        let (receiver, _) = test_player_with_packets(&server, world, receiver_uuid, "Receiver", 32);
+        assert!(server.online_players.insert(Arc::clone(&initiator)));
+        assert!(server.online_players.insert(Arc::clone(&receiver)));
+
+        let initiating_source = CommandSource::new(
+            CommandSender::Player(Arc::clone(&initiator)),
+            Arc::clone(&server),
+        );
+        server
+            .player_permission_states
+            .write()
+            .set(initiator_uuid, PermissionSubjectState::default());
+        let transformed = initiating_source.with_entity(Arc::clone(&receiver) as SharedEntity);
+
+        let Some(effective_player) = transformed.player() else {
+            panic!("a player entity transform should retain an effective player");
+        };
+        assert!(Arc::ptr_eq(effective_player, &receiver));
+        assert!(CommandPermissionSource::has_permission(
+            &transformed,
+            &access
+        ));
+        assert!(CommandPermissionSource::has_permission(
+            &transformed,
+            &modify
+        ));
+
+        let receiver_source = CommandSource::new(
+            CommandSender::Player(Arc::clone(&receiver)),
+            Arc::clone(&server),
+        );
+        assert!(!CommandPermissionSource::has_permission(
+            &receiver_source,
+            &access
+        ));
+        assert!(!CommandPermissionSource::has_permission(
+            &receiver_source,
+            &modify
+        ));
+
+        drop((
+            transformed,
+            initiating_source,
+            receiver_source,
+            initiator,
+            receiver,
+        ));
+        drop(server);
+        if let Err(error) = fs::remove_dir_all(&storage_root).await {
+            panic!("test storage should be removed: {error}");
+        }
+    });
+}
+
 fn test_player(server: &Arc<Server>, world: Arc<World>, uuid: Uuid) -> Arc<Player> {
     test_player_with_packets(server, world, uuid, "TestPlayer", 1).0
 }

@@ -215,10 +215,7 @@ fn readonly_target_slots_reject_pickup_and_creative_clone() {
         .inventory
         .lock()
         .set_item(0, ItemStack::with_count(&vanilla_items::STONE, 5));
-    let Ok((access, _)) = invsee_permissions() else {
-        panic!("built-in invsee permissions should parse");
-    };
-    let mut menu = invsee(1, &source, &target, false, access);
+    let mut menu = invsee(1, &source, &target, false);
 
     menu.clicked(
         Click::Pickup {
@@ -242,10 +239,7 @@ fn readonly_target_slots_reject_pickup_and_creative_clone() {
 fn modify_view_edits_armor_slots_within_equipment_rules() {
     let source = test_player(8, "Viewer", 8);
     let target = test_player(9, "Target", 9);
-    let Ok((_, modify)) = invsee_permissions() else {
-        panic!("built-in invsee permissions should parse");
-    };
-    let mut menu = invsee(1, &source, &target, true, modify);
+    let mut menu = invsee(1, &source, &target, true);
 
     *menu.behavior_mut().carried_mut() = ItemStack::new(&vanilla_items::STONE);
     menu.clicked(
@@ -288,10 +282,7 @@ fn modify_view_synchronizes_target_armor_without_inventory_locks() {
         .inventories
         .lock()
         .extend([source.inventory.clone(), target.player.inventory.clone()]);
-    let Ok((_, modify)) = invsee_permissions() else {
-        panic!("built-in invsee permissions should parse");
-    };
-    let mut menu = invsee(1, &source, &target.player, true, modify);
+    let mut menu = invsee(1, &source, &target.player, true);
     *menu.behavior_mut().carried_mut() = ItemStack::new(&vanilla_items::IRON_HELMET);
 
     menu.clicked(
@@ -330,10 +321,7 @@ fn self_invsee_synchronizes_own_armor_slot() {
         .inventories
         .lock()
         .push(recording.player.inventory.clone());
-    let Ok((_, modify)) = invsee_permissions() else {
-        panic!("built-in invsee permissions should parse");
-    };
-    let mut menu = invsee(1, &recording.player, &recording.player, true, modify);
+    let mut menu = invsee(1, &recording.player, &recording.player, true);
     *menu.behavior_mut().carried_mut() = ItemStack::new(&vanilla_items::IRON_HELMET);
 
     menu.clicked(
@@ -365,10 +353,7 @@ fn modify_view_synchronizes_empty_offhand_after_removal() {
         .inventory
         .lock()
         .set_item(40, ItemStack::new(&vanilla_items::SHIELD));
-    let Ok((_, modify)) = invsee_permissions() else {
-        panic!("built-in invsee permissions should parse");
-    };
-    let mut menu = invsee(1, &source, &target.player, true, modify);
+    let mut menu = invsee(1, &source, &target.player, true);
 
     menu.clicked(
         Click::Pickup {
@@ -390,10 +375,7 @@ fn modify_view_synchronizes_empty_offhand_after_removal() {
 fn modify_view_synchronizes_target_hotbar_slot() {
     let source = test_player(20, "Viewer", 20);
     let target = recording_player(21, "Target", 21);
-    let Ok((_, modify)) = invsee_permissions() else {
-        panic!("built-in invsee permissions should parse");
-    };
-    let mut menu = invsee(1, &source, &target.player, true, modify);
+    let mut menu = invsee(1, &source, &target.player, true);
     *menu.behavior_mut().carried_mut() = ItemStack::new(&vanilla_items::STONE);
 
     menu.clicked(
@@ -415,10 +397,7 @@ fn modify_view_synchronizes_target_hotbar_slot() {
 fn modify_view_coalesces_to_latest_target_inventory_value() {
     let source = test_player(15, "Viewer", 15);
     let target = recording_player(16, "Target", 16);
-    let Ok((_, modify)) = invsee_permissions() else {
-        panic!("built-in invsee permissions should parse");
-    };
-    let mut menu = invsee(1, &source, &target.player, true, modify);
+    let mut menu = invsee(1, &source, &target.player, true);
 
     *menu.behavior_mut().carried_mut() = ItemStack::new(&vanilla_items::IRON_HELMET);
     menu.clicked(
@@ -449,10 +428,7 @@ fn modify_view_coalesces_to_latest_target_inventory_value() {
 fn modify_view_drag_queues_each_changed_target_slot() {
     let source = test_player(17, "Viewer", 17);
     let target = recording_player(18, "Target", 18);
-    let Ok((_, modify)) = invsee_permissions() else {
-        panic!("built-in invsee permissions should parse");
-    };
-    let mut menu = invsee(1, &source, &target.player, true, modify);
+    let mut menu = invsee(1, &source, &target.player, true);
     *menu.behavior_mut().carried_mut() = ItemStack::with_count(&vanilla_items::STONE, 2);
 
     for action in [
@@ -606,10 +582,7 @@ fn modify_view_moves_inventory_items_in_both_directions() {
         .inventory
         .lock()
         .set_item(0, ItemStack::with_count(&vanilla_items::STONE, 5));
-    let Ok((_, modify)) = invsee_permissions() else {
-        panic!("built-in invsee permissions should parse");
-    };
-    let mut menu = invsee(1, &source, &target, true, modify);
+    let mut menu = invsee(1, &source, &target, true);
 
     menu.clicked(
         Click::QuickMove {
@@ -639,10 +612,7 @@ fn modify_view_extracts_but_cannot_insert_crafting_items() {
         .crafting_container()
         .lock()
         .set_item(0, ItemStack::new(&vanilla_items::OAK_LOG));
-    let Ok((_, modify)) = invsee_permissions() else {
-        panic!("built-in invsee permissions should parse");
-    };
-    let mut menu = invsee(1, &source, &target, true, modify);
+    let mut menu = invsee(1, &source, &target, true);
     menu.on_open(&source);
 
     {
@@ -689,10 +659,7 @@ fn self_invsee_quick_move_does_not_rearrange_the_aliased_inventory() {
         .inventory
         .lock()
         .set_item(0, ItemStack::with_count(&vanilla_items::STONE, 5));
-    let Ok((_, modify)) = invsee_permissions() else {
-        panic!("built-in invsee permissions should parse");
-    };
-    let mut menu = invsee(1, &player, &player, true, modify);
+    let mut menu = invsee(1, &player, &player, true);
 
     menu.clicked(
         Click::QuickMove {
@@ -716,27 +683,24 @@ fn self_invsee_quick_move_does_not_rearrange_the_aliased_inventory() {
 }
 
 #[test]
-fn open_menu_revalidates_permissions_and_target_lifecycle() {
+fn open_menu_keeps_captured_access_and_tracks_target_lifecycle() {
     let source = test_player(6, "Viewer", 6);
     let target = test_player(7, "Target", 7);
-    let Ok((access, modify)) = invsee_permissions() else {
-        panic!("built-in invsee permissions should parse");
-    };
 
     set_permissions(
         &source,
         PermissionSet::from_entries([PermissionEntry::allow(permission_key(MODIFY_PERMISSION))]),
     );
-    let modify_menu = invsee(1, &source, &target, true, modify);
+    let modify_menu = invsee(1, &source, &target, true);
     assert!(modify_menu.still_valid(&source));
 
-    set_permissions(
-        &source,
-        PermissionSet::from_entries([PermissionEntry::allow(permission_key(INVSEE_PERMISSION))]),
+    set_permissions(&source, PermissionSet::new());
+    assert!(
+        modify_menu.still_valid(&source),
+        "an opened menu keeps the access and modify mode authorized by its command"
     );
-    assert!(!modify_menu.still_valid(&source));
 
-    let readonly_menu = invsee(2, &source, &target, false, access);
+    let readonly_menu = invsee(2, &source, &target, false);
     assert!(readonly_menu.still_valid(&source));
     assert!(source.begin_domain_switch());
     assert!(!readonly_menu.still_valid(&source));

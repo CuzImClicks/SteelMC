@@ -625,6 +625,99 @@ fn living_tick_detects_raw_inventory_equipment_mutation() {
 }
 
 #[test]
+fn death_respawn_redetects_unchanged_kept_equipment() {
+    init_test_registry();
+    let player = test_player(Arc::clone(test_world()));
+    let (base_armor, base_toughness) = {
+        let attributes = player.attributes().lock();
+        (
+            attributes.required_value(vanilla_attributes::ARMOR),
+            attributes.required_value(vanilla_attributes::ARMOR_TOUGHNESS),
+        )
+    };
+    let helmet = ItemStack::new(&vanilla_items::DIAMOND_HELMET);
+    player
+        .inventory
+        .lock()
+        .set(EquipmentSlot::Head, helmet.clone());
+
+    LivingEntity::detect_equipment_updates(player.as_ref());
+    assert_eq!(
+        Entity::drain_dirty_equipment(player.as_ref()),
+        vec![EquipmentSlotItem {
+            slot: EquipmentSlot::Head,
+            item_stack: helmet.clone(),
+        }]
+    );
+
+    // Both keep-inventory and spectator respawns retain the same stack while
+    // Steel resets the reused player's transient attributes.
+    player.reset_state_for_death_respawn();
+    assert_eq!(
+        player
+            .attributes()
+            .lock()
+            .required_value(vanilla_attributes::ARMOR)
+            .to_bits(),
+        base_armor.to_bits()
+    );
+    assert!(ItemStack::matches(
+        player.inventory.lock().get_ref(EquipmentSlot::Head),
+        &helmet
+    ));
+
+    LivingEntity::detect_equipment_updates(player.as_ref());
+    {
+        let attributes = player.attributes().lock();
+        assert_eq!(
+            attributes
+                .required_value(vanilla_attributes::ARMOR)
+                .to_bits(),
+            (base_armor + 3.0).to_bits()
+        );
+        assert_eq!(
+            attributes
+                .required_value(vanilla_attributes::ARMOR_TOUGHNESS)
+                .to_bits(),
+            (base_toughness + 2.0).to_bits()
+        );
+    }
+    assert_eq!(
+        Entity::drain_dirty_equipment(player.as_ref()),
+        vec![EquipmentSlotItem {
+            slot: EquipmentSlot::Head,
+            item_stack: helmet,
+        }]
+    );
+
+    LivingEntity::detect_equipment_updates(player.as_ref());
+    assert!(Entity::drain_dirty_equipment(player.as_ref()).is_empty());
+}
+
+#[test]
+fn death_respawn_discards_stale_pending_equipment_change() {
+    init_test_registry();
+    let player = test_player(Arc::clone(test_world()));
+    player.inventory.lock().set(
+        EquipmentSlot::Head,
+        ItemStack::new(&vanilla_items::DIAMOND_HELMET),
+    );
+    LivingEntity::detect_equipment_updates(player.as_ref());
+
+    player
+        .inventory
+        .lock()
+        .set(EquipmentSlot::Head, ItemStack::empty());
+    player.reset_state_for_death_respawn();
+    LivingEntity::detect_equipment_updates(player.as_ref());
+
+    assert!(
+        Entity::drain_dirty_equipment(player.as_ref()).is_empty(),
+        "respawn must not emit equipment queued by the removed living entity"
+    );
+}
+
+#[test]
 fn equipment_detection_tracks_selected_main_hand() {
     init_test_registry();
     let player = test_player(Arc::clone(test_world()));
