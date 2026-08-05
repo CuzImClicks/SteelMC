@@ -731,10 +731,7 @@ impl Player {
 
         // TODO: team death message visibility (ALWAYS / HIDE_FOR_OTHER_TEAMS / HIDE_FOR_OWN_TEAM)
         if show_death_messages {
-            world.broadcast_system_chat(CSystemChat {
-                content: death_message,
-                overlay: false,
-            });
+            world.broadcast_system_chat(CSystemChat::new(&death_message, false));
         }
 
         if !world.get_game_rule(&KEEP_INVENTORY) {

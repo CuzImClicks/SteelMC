@@ -1,6 +1,6 @@
 use steel_macros::ClientPacket;
 use steel_registry::packets::play::C_TAB_LIST;
-use text_components::{TextComponent, resolving::TextResolutor};
+use steel_utils::serial::RawComponent;
 
 /// Packet to set the tab list header and footer.
 /// This allows servers to display custom text above and below the player list.
@@ -8,49 +8,20 @@ use text_components::{TextComponent, resolving::TextResolutor};
 #[packet_id(Play = C_TAB_LIST)]
 pub struct CTabList {
     /// The header text component (displayed above the player list)
-    pub header: TextComponent,
+    pub header: RawComponent,
     /// The footer text component (displayed below the player list)
-    pub footer: TextComponent,
+    pub footer: RawComponent,
 }
 
 impl CTabList {
     /// Creates a new tab list packet with the specified header and footer.
+    ///
+    /// Both must already be resolved for their recipients.
     #[must_use]
-    pub fn new<T: TextResolutor>(
-        header: &TextComponent,
-        footer: &TextComponent,
-        player: &T,
-    ) -> Self {
+    pub fn new(header: impl Into<RawComponent>, footer: impl Into<RawComponent>) -> Self {
         Self {
-            header: header.resolve(player),
-            footer: footer.resolve(player),
-        }
-    }
-
-    /// Creates a tab list packet with empty header and footer (clears them).
-    #[must_use]
-    pub const fn empty() -> Self {
-        Self {
-            header: TextComponent::new(),
-            footer: TextComponent::new(),
-        }
-    }
-
-    /// Creates a tab list packet with only a header.
-    #[must_use]
-    pub fn header_only<T: TextResolutor>(header: &TextComponent, player: &T) -> Self {
-        Self {
-            header: header.resolve(player),
-            footer: TextComponent::new(),
-        }
-    }
-
-    /// Creates a tab list packet with only a footer.
-    #[must_use]
-    pub fn footer_only<T: TextResolutor>(footer: &TextComponent, player: &T) -> Self {
-        Self {
-            header: TextComponent::new(),
-            footer: footer.resolve(player),
+            header: header.into(),
+            footer: footer.into(),
         }
     }
 }

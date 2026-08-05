@@ -477,6 +477,9 @@ impl Server {
     }
 
     /// Broadcasts a packet to every online player, regardless of world membership.
+    ///
+    /// Use [`broadcast_to_online_with`](Self::broadcast_to_online_with)
+    /// when the packets should be different per player.
     pub fn broadcast_to_online<P: ClientPacket>(&self, packet: P) {
         let Ok(encoded) =
             EncodedPacket::from_bare(packet, self.config.compression, ConnectionProtocol::Play)
@@ -489,7 +492,8 @@ impl Server {
         });
     }
 
-    pub(super) fn broadcast_to_online_with<P: ClientPacket, F: Fn(&Player) -> P>(&self, packet: F) {
+    /// Builds and encodes the packet separately for each online player.
+    pub fn broadcast_to_online_with<P: ClientPacket, F: Fn(&Player) -> P>(&self, packet: F) {
         self.online_players.iter_players(|_, player| {
             player.send_packet(packet(player));
             true

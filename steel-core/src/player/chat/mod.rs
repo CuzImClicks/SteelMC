@@ -311,7 +311,7 @@ impl Player {
 
     /// Sends a system message to the player.
     pub fn send_message(&self, text: &TextComponent) {
-        self.send_packet(CSystemChat::new(text, false, self));
+        self.send_packet(CSystemChat::new(text.resolve(self), false));
     }
 
     /// Updates the player's chat session and initializes the message chain.

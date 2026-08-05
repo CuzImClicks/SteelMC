@@ -1,18 +1,20 @@
 use steel_macros::{ClientPacket, WriteTo};
 use steel_registry::packets::play::C_SYSTEM_CHAT;
-use text_components::{TextComponent, resolving::TextResolutor};
+use steel_utils::serial::RawComponent;
 
 #[derive(ClientPacket, WriteTo, Clone, Debug)]
 #[packet_id(Play = C_SYSTEM_CHAT)]
 pub struct CSystemChat {
-    pub content: TextComponent,
+    pub content: RawComponent,
     pub overlay: bool,
 }
 
 impl CSystemChat {
-    pub fn new<T: TextResolutor>(content: &TextComponent, overlay: bool, player: &T) -> Self {
+    /// `content` must already be resolved for its recipients.
+    #[must_use]
+    pub fn new(content: impl Into<RawComponent>, overlay: bool) -> Self {
         Self {
-            content: content.resolve(player),
+            content: content.into(),
             overlay,
         }
     }

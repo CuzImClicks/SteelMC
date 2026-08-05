@@ -39,10 +39,7 @@ fn send_message(context: &SteelCommandContext<CommandSource>) -> Result<i32, Com
             context.source(),
             target.as_ref(),
         ))?;
-        target.send_packet(CSystemChat {
-            content: message,
-            overlay: false,
-        });
+        target.send_packet(CSystemChat::new(&message, false));
     }
     Ok(result)
 }

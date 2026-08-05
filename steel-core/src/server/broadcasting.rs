@@ -1,17 +1,24 @@
 use super::{
     Arc, CEntityEvent, CGameEvent, CSystemChat, CTabList, CTickingState, CTickingStep, Color,
-    CommandSender, CommandSource, DisplayResolutor, Entity, GameEventType, Modifier, Player,
-    Server, SprintReport, TabListTickStats, TextComponent, Uuid, client_permission_event,
-    command_tree_packet, translations,
+    CommandSender, CommandSource, ConnectionProtocol, DisplayResolutor, EncodedPacket, Entity,
+    GameEventType, Modifier, NetworkConnection, Player, Server, SprintReport, TabListTickStats,
+    TextComponent, Uuid, client_permission_event, command_tree_packet, translations,
 };
 
 impl Server {
     /// Logs and broadcasts a system chat message to online players.
     fn broadcast_system_chat(&self, message: &TextComponent, excluded_player: Option<Uuid>) {
         log::info!("{}", message.to_plain(&DisplayResolutor));
+        let Ok(encoded) = EncodedPacket::from_bare(
+            CSystemChat::new(message, false),
+            self.config.compression,
+            ConnectionProtocol::Play,
+        ) else {
+            return;
+        };
         self.online_players.iter_players(|uuid, player| {
             if Some(*uuid) != excluded_player {
-                player.send_packet(CSystemChat::new(message, false, player));
+                player.connection.send_encoded(encoded.clone());
             }
             true
         });
@@ -66,7 +73,7 @@ impl Server {
     pub(super) fn broadcast_tab_list(&self, tick_stats: TabListTickStats) {
         let (header, footer) = Self::tab_list_components(tick_stats);
 
-        self.broadcast_to_online_with(|player| CTabList::new(&header, &footer, player));
+        self.broadcast_to_online(CTabList::new(&header, &footer));
     }
 
     /// Broadcasts a sprint completion report to all players.
