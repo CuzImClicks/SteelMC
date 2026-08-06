@@ -65,7 +65,7 @@ fn generate_text_component(component: &TextComponentJson) -> TokenStream {
                     obfuscated: None,
                     shadow_color: None,
                 },
-                children: vec![],
+                children: Cow::Borrowed(&[]),
                 interactions: Interactivity::new(),
             }
         }

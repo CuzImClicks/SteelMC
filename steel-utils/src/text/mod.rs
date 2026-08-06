@@ -110,7 +110,7 @@ fn hash_component_as_map(component: &TextComponent, hasher: &mut ComponentHasher
         key_hasher.put_string("extra");
         let mut value_hasher = ComponentHasher::new();
         value_hasher.start_list();
-        for child in &component.children {
+        for child in component.children.iter() {
             value_hasher.put_component_hash(child);
         }
         value_hasher.end_list();

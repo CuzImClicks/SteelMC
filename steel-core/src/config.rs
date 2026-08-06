@@ -119,10 +119,6 @@ impl RuntimeConfig {
 /// Label type for server links — either built-in string or custom `TextComponent`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
-#[expect(
-    clippy::large_enum_variant,
-    reason = "TextComponent variant is common; boxing would add indirection for every use"
-)]
 pub enum ConfigLabel {
     /// Built-in server link type (e.g., "`bug_report`", "website")
     BuiltIn(ServerLinksType),

@@ -25,7 +25,9 @@ use steel_utils::{
     BlockPos, BlockStateId, ChunkPos, Direction, Identifier, SectionPos, WorldAabb, axis::Axis,
     block_util::FoundRectangle,
 };
-use text_components::{Modifier as _, TextComponent, format::Color, interactivity::ClickEvent};
+use text_components::{
+    Modifier as _, Style as _, TextComponent, format::Color, interactivity::ClickEvent,
+};
 use uuid::Uuid;
 
 use crate::behavior::{BlockBehavior, blocks::WitherRoseBlock, init_behaviors};

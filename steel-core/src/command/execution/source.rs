@@ -8,7 +8,7 @@ use steel_registry::{
     world_clock::WorldClockRef,
 };
 use steel_utils::translations;
-use text_components::{Modifier, TextComponent, format::Color};
+use text_components::{Style, TextComponent, format::Color};
 
 use crate::{
     command::{

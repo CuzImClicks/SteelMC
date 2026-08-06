@@ -2961,7 +2961,6 @@ dependencies = [
 [[package]]
 name = "text_components"
 version = "0.1.7"
-source = "git+https://github.com/Steel-Foundation/TextComponents.git?rev=04d60d0d9c65ab1cb05154105e184d5904e8990b#04d60d0d9c65ab1cb05154105e184d5904e8990b"
 dependencies = [
  "colored",
  "heck",
@@ -2973,7 +2972,23 @@ dependencies = [
  "serde_json",
  "simdnbt",
  "supports-hyperlinks",
+ "text_components_grammar",
+ "text_components_macros",
  "uuid",
+]
+
+[[package]]
+name = "text_components_grammar"
+version = "0.1.0"
+
+[[package]]
+name = "text_components_macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+ "text_components_grammar",
 ]
 
 [[package]]

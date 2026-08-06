@@ -341,8 +341,8 @@ fn command_syntax_error_builds_translated_styled_feedback() {
     };
     assert_eq!(context.format.color, Some(Color::Gray));
     assert!(matches!(
-        context.interactions.click,
-        Some(ClickEvent::SuggestCommand { ref command })
+        context.interactions.click.as_deref(),
+        Some(ClickEvent::SuggestCommand { command })
             if command.as_ref() == "/0123456789abcdef"
     ));
     assert_eq!(context.children.len(), 4);

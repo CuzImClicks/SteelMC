@@ -127,7 +127,7 @@ pub fn generate_text_component(component: &TextComponentJson) -> TokenStream {
                 obfuscated: None,
                 shadow_color: None,
             },
-            children: vec![],
+            children: ::std::borrow::Cow::Borrowed(&[]),
             interactions: text_components::interactivity::Interactivity::new(),
         }
     }

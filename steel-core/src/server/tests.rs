@@ -22,7 +22,11 @@ use steel_registry::{
     vanilla_items,
 };
 use steel_utils::{BlockPos, ChunkPos, types::UpdateFlags};
-use steel_utils::{codec::VarInt, serial::ReadFrom, text::DisplayResolutor};
+use steel_utils::{
+    codec::VarInt,
+    serial::{RawComponent, ReadFrom},
+    text::DisplayResolutor,
+};
 use text_components::TextComponent;
 use tokio::{fs, runtime::Builder, task::JoinSet, time::sleep};
 use uuid::Uuid;
@@ -2498,6 +2502,10 @@ fn tab_list_distinguishes_recent_and_five_second_tick_times() {
         average_mspt: 7.84,
         p95_mspt: 12.31,
     });
+
+    let footer: RawComponent = footer.into();
+    let footer = TextComponent::read(&mut Cursor::new(footer.as_bytes()))
+        .expect("the tab list footer should decode");
 
     assert_eq!(
         footer.to_plain(&DisplayResolutor),

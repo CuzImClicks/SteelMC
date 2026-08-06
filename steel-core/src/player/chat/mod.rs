@@ -22,9 +22,9 @@ use steel_protocol::packets::game::{
 };
 use steel_registry::{RegistryEntry, vanilla_chat_types};
 use steel_utils::translations;
-use text_components::Modifier;
 use text_components::TextComponent;
 use text_components::interactivity::{ClickEvent, HoverEvent};
+use text_components::{Modifier, Style};
 
 use crate::entity::Entity;
 use crate::player::Player;

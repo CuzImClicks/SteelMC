@@ -328,7 +328,7 @@ mod tests {
     use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
     use steel_registry::{test_support::init_test_registry, vanilla_blocks};
     use steel_utils::BlockPos;
-    use text_components::{Modifier as _, TextComponent};
+    use text_components::{Style as _, TextComponent};
     use uuid::Uuid;
 
     use super::{SignBlockEntity, SignText};

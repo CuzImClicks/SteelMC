@@ -305,12 +305,13 @@ fn join_components(
     };
 
     let mut result = TextComponent::new();
-    result.children.push(first);
-    result.children.push(separator.clone());
-    result.children.push(second);
+    let children = result.children.to_mut();
+    children.push(first);
+    children.push(separator.clone());
+    children.push(second);
     for value in values {
-        result.children.push(separator.clone());
-        result.children.push(value);
+        children.push(separator.clone());
+        children.push(value);
     }
     result
 }
@@ -333,16 +334,14 @@ pub(super) fn validate_component_syntax(component: &TextComponent) -> Result<(),
         Content::Resolvable(resolvable) => validate_resolvable_syntax(resolvable)?,
         Content::Text { .. } | Content::Keybind { .. } | Content::Custom(_) => {}
     }
-    for child in &component.children {
+    for child in component.children.iter() {
         validate_component_syntax(child)?;
     }
-    match &component.interactions.hover {
-        Some(
-            HoverEvent::ShowText { value }
-            | HoverEvent::ShowEntity {
-                name: Some(value), ..
-            },
-        ) => validate_component_syntax(value)?,
+    match component.interactions.hover.as_deref() {
+        Some(HoverEvent::ShowText { value }) => validate_component_syntax(value)?,
+        Some(HoverEvent::ShowEntity {
+            name: Some(name), ..
+        }) => validate_component_syntax(name)?,
         Some(HoverEvent::ShowItem { .. } | HoverEvent::ShowEntity { name: None, .. }) | None => {}
     }
     Ok(())
@@ -392,7 +391,7 @@ mod tests {
 
     use simdnbt::owned::{NbtCompound, NbtList};
     use text_components::{
-        Modifier as _,
+        Style as _,
         content::{Content, NbtSource, Resolvable},
         format::Color,
     };

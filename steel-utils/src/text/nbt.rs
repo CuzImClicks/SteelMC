@@ -3,7 +3,7 @@
 use std::fmt::Write as _;
 
 use simdnbt::owned::{NbtCompound, NbtTag};
-use text_components::{Modifier as _, TextComponent, format::Color};
+use text_components::{Style as _, TextComponent, format::Color};
 
 const MAX_DEPTH: usize = 64;
 const MAX_ARRAY_LENGTH: usize = 128;
@@ -191,6 +191,7 @@ impl NbtComponentVisitor {
     fn token(&mut self, value: &str) {
         self.result
             .children
+            .to_mut()
             .push(TextComponent::plain(value.to_owned()));
     }
 
@@ -220,7 +221,7 @@ impl NbtComponentVisitor {
         } else {
             TextComponent::plain(value).color(color)
         };
-        self.result.children.push(component);
+        self.result.children.to_mut().push(component);
     }
 }
 

@@ -104,7 +104,7 @@ use steel_utils::{
     text::DisplayResolutor,
     translations,
 };
-use text_components::{Modifier, TextComponent, format::Color};
+use text_components::{TextComponent, format::Color};
 use tick_rate_manager::{SprintReport, TickRateManager};
 use tokio::{
     runtime::Runtime,

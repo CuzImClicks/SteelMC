@@ -67,7 +67,7 @@ impl WriteTo for RawComponent {
 
 #[cfg(test)]
 mod tests {
-    use text_components::{Modifier, TextComponent, format::Color};
+    use text_components::{Modifier, Style, TextComponent, format::Color};
 
     use super::RawComponent;
     use crate::serial::WriteTo;

@@ -9,7 +9,9 @@ use steel_registry::{
     vanilla_enchantment_tags::EnchantmentTag,
 };
 use steel_utils::{Identifier, translations};
-use text_components::{Modifier, TextComponent, format::Color, translation::TranslatedMessage};
+use text_components::{
+    Modifier, Style, TextComponent, format::Color, translation::TranslatedMessage,
+};
 
 use super::super::{
     brigadier::{ArgumentType, CommandNodeBuilder, CommandSyntaxError},

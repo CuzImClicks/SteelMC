@@ -3,7 +3,7 @@
 use std::{error::Error, fmt};
 
 use steel_utils::translations;
-use text_components::{Modifier, TextComponent, format::Color, interactivity::ClickEvent};
+use text_components::{Modifier, Style, TextComponent, format::Color, interactivity::ClickEvent};
 
 const CONTEXT_AMOUNT: usize = 10;
 

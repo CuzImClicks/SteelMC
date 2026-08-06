@@ -28,7 +28,7 @@ use steel_utils::translations;
 use text_components::content::Resolvable;
 use text_components::custom::CustomData;
 use text_components::resolving::TextResolutor;
-use text_components::{Modifier, TextComponent, format::Color};
+use text_components::{Style, TextComponent, format::Color};
 use tokio::io::{BufReader, BufWriter};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::select;

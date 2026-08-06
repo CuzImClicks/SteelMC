@@ -233,7 +233,10 @@ fn component_argument_preserves_list_siblings_and_following_nodes() {
         panic!("component should be retained");
     };
     let mut expected = TextComponent::plain("first");
-    expected.children.push(TextComponent::plain("second"));
+    expected
+        .children
+        .to_mut()
+        .push(TextComponent::plain("second"));
 
     assert_eq!(component, &expected);
 }

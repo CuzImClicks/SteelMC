@@ -4,7 +4,7 @@ use std::{sync::Arc, time::Instant};
 
 use steel_utils::{BlockPos, Identifier, translations};
 use text_components::{
-    Modifier, TextComponent,
+    Modifier, Style, TextComponent,
     format::Color,
     interactivity::{ClickEvent, HoverEvent},
 };
@@ -448,12 +448,12 @@ mod tests {
 
         assert_eq!(component.format.color, Some(Color::Green));
         assert!(matches!(
-            component.interactions.click,
-            Some(ClickEvent::SuggestCommand { ref command })
+            component.interactions.click.as_deref(),
+            Some(ClickEvent::SuggestCommand { command })
                 if command.as_ref() == "/tp @s 12 ~ -34"
         ));
         assert!(matches!(
-            component.interactions.hover,
+            component.interactions.hover.as_deref(),
             Some(HoverEvent::ShowText { .. })
         ));
     }

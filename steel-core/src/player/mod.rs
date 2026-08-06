@@ -75,7 +75,7 @@ use steel_utils::types::{Difficulty, GameType, InteractionHand};
 use text_components::resolving::TextResolutor;
 use text_components::translation::TranslatedMessage;
 use text_components::{
-    Modifier as _, TextComponent,
+    Modifier as _, Style as _, TextComponent,
     interactivity::{ClickEvent, HoverEvent},
 };
 use text_components::{content::Resolvable, custom::CustomData};

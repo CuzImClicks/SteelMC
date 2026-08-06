@@ -1,6 +1,6 @@
 use steel_utils::{Identifier, translations};
 use text_components::{
-    Modifier, TextComponent,
+    Modifier, Style, TextComponent,
     format::Color,
     interactivity::{ClickEvent, HoverEvent},
 };

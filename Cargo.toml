@@ -122,6 +122,8 @@ text_components = {
         "custom",
         "nbt",
         "serde",
+        "minimessage",
+        "macros"
     ]
 }
 
@@ -208,3 +210,6 @@ debug = true
 [profile.samplydev]
 inherits = "dev"
 debug = true
+
+[patch."https://github.com/Steel-Foundation/TextComponents.git"]
+text_components = { path = "../TextComponents" }

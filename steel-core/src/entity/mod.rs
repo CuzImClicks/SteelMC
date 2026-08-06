@@ -54,7 +54,8 @@ use steel_utils::{
     UuidExt as _, WorldAabb, axis::Axis, block_util::FoundRectangle, text::DisplayResolutor,
 };
 use text_components::{
-    Modifier as _, TextComponent, interactivity::HoverEvent, translation::TranslatedMessage,
+    Modifier as _, Style as _, TextComponent, interactivity::HoverEvent,
+    translation::TranslatedMessage,
 };
 use uuid::Uuid;
 
@@ -94,7 +95,7 @@ fn entity_type_name(entity_type: EntityTypeRef) -> TextComponent {
 fn remove_entity_name_actions(mut component: TextComponent) -> TextComponent {
     fn remove_actions(component: &mut TextComponent) {
         component.interactions.click = None;
-        for child in &mut component.children {
+        for child in component.children.to_mut() {
             remove_actions(child);
         }
     }

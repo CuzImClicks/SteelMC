@@ -19,7 +19,7 @@ pub(super) fn description_id(stack: &ItemStack) -> Option<&str> {
     Some(message.key.as_ref())
 }
 
-pub(super) fn translated(
+pub(super) const fn translated(
     key: String,
     args: Option<Box<[TextComponent]>>,
 ) -> Cow<'static, TextComponent> {

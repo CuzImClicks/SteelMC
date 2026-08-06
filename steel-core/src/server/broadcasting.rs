@@ -1,7 +1,10 @@
+use steel_utils::serial::RawComponent;
+use text_components::{Style as _, text_nbt};
+
 use super::{
     Arc, CEntityEvent, CGameEvent, CSystemChat, CTabList, CTickingState, CTickingStep, Color,
     CommandSender, CommandSource, ConnectionProtocol, DisplayResolutor, EncodedPacket, Entity,
-    GameEventType, Modifier, NetworkConnection, Player, Server, SprintReport, TabListTickStats,
+    GameEventType, NetworkConnection, Player, Server, SprintReport, TabListTickStats,
     TextComponent, Uuid, client_permission_event, command_tree_packet, translations,
 };
 
@@ -27,7 +30,9 @@ impl Server {
     /// Builds the tab list header/footer with recent and five-second tick statistics.
     pub(super) fn tab_list_components(
         tick_stats: TabListTickStats,
-    ) -> (TextComponent, TextComponent) {
+    ) -> (impl Into<RawComponent>, impl Into<RawComponent>) {
+        const HEADER: &[u8] = text_nbt!("\n<yellow>Steel Dev Build</yellow>\n");
+
         // Color TPS based on value
         let tps_color = if tick_stats.tps >= 19.5 {
             Color::Green
@@ -45,35 +50,30 @@ impl Server {
             }
         };
 
-        let header = TextComponent::plain("\n").add_children(vec![
-            TextComponent::plain("Steel Dev Build").color(Color::Yellow),
-            TextComponent::plain("\n"),
-        ]);
-        let footer = TextComponent::plain("\n").add_children(vec![
-            TextComponent::plain("TPS: ").color(Color::Gray),
-            TextComponent::plain(format!("{:.1}", tick_stats.tps)).color(tps_color),
-            TextComponent::plain(" | ").color(Color::DarkGray),
-            TextComponent::plain("MSPT: ").color(Color::Gray),
-            TextComponent::plain(format!("{:.2}", tick_stats.recent_mspt))
-                .color(mspt_color(tick_stats.recent_mspt)),
-            TextComponent::plain(" recent | ").color(Color::Gray),
-            TextComponent::plain(format!("{:.2}", tick_stats.average_mspt))
-                .color(mspt_color(tick_stats.average_mspt)),
-            TextComponent::plain(" avg (5s) | ").color(Color::Gray),
-            TextComponent::plain(format!("{:.2}", tick_stats.p95_mspt))
-                .color(mspt_color(tick_stats.p95_mspt)),
-            TextComponent::plain(" p95").color(Color::Gray),
-            TextComponent::plain("\n"),
-        ]);
+        let recent_color = mspt_color(tick_stats.recent_mspt);
+        let average_color = mspt_color(tick_stats.average_mspt);
+        let p95_color = mspt_color(tick_stats.p95_mspt);
 
-        (header, footer)
+        let footer = text_nbt!(
+            "\n<gray>TPS: </gray><{tps_color}>{:.1}</{tps_color}>\
+             <dark_gray> | </dark_gray><gray>MSPT: </gray>\
+             <{recent_color}>{:.2}</{recent_color}><gray> recent | </gray>\
+             <{average_color}>{:.2}</{average_color}><gray> avg (5s) | </gray>\
+             <{p95_color}>{:.2}</{p95_color}><gray> p95</gray>\n",
+            tick_stats.tps,
+            tick_stats.recent_mspt,
+            tick_stats.average_mspt,
+            tick_stats.p95_mspt
+        );
+
+        (HEADER, footer)
     }
 
     /// Broadcasts the tab list header/footer with current TPS and MSPT statistics.
     pub(super) fn broadcast_tab_list(&self, tick_stats: TabListTickStats) {
         let (header, footer) = Self::tab_list_components(tick_stats);
 
-        self.broadcast_to_online(CTabList::new(&header, &footer));
+        self.broadcast_to_online(CTabList::new(header, footer));
     }
 
     /// Broadcasts a sprint completion report to all players.

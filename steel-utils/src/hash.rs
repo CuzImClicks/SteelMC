@@ -596,7 +596,7 @@ mod tests {
     #[test]
     fn test_text_component_simple_styled() {
         use text_components::TextComponent;
-        use text_components::{Modifier, format::Color};
+        use text_components::{Style, format::Color};
 
         // Simple styled component: {"text":"R","color":"red","bold":true}
         // Expected hash from vanilla client 1.21.11: 1605556242
