@@ -14,7 +14,7 @@ use steel_registry::game_events::GameEventRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entity_data::LivingEntityData as SyncedLivingEntityData;
 use steel_registry::{
-    REGISTRY, sound_events, test_support::init_test_registry, vanilla_attributes, vanilla_blocks,
+    REGISTRY, init_vanilla_registry, sound_events, vanilla_attributes, vanilla_blocks,
     vanilla_damage_types, vanilla_entities, vanilla_fluids, vanilla_game_events, vanilla_items,
     vanilla_loot_tables, vanilla_mob_effects,
 };
@@ -218,7 +218,7 @@ fn command_data_compare_nbt_contains_base_and_custom_data() {
 
 #[test]
 fn command_data_compare_nbt_contains_implemented_living_data() {
-    init_test_registry();
+    init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true).with_health(12.5);
     entity
         .attributes()
@@ -298,7 +298,7 @@ fn command_data_compare_nbt_contains_implemented_living_data() {
 
 #[test]
 fn kill_uses_vanilla_living_and_non_living_paths() {
-    init_test_registry();
+    init_vanilla_registry();
     init_behaviors();
     let source_world_storage = fresh_test_world("kill_game_event_source");
     let target_world_storage = fresh_test_world("kill_game_event_target");
@@ -893,7 +893,7 @@ fn wither_rose_respects_difficulty_invulnerability_and_effect_immunity() {
 
 #[test]
 fn default_mob_effect_eligibility_uses_vanilla_entity_type_tags() {
-    init_test_registry();
+    init_vanilla_registry();
     let silverfish =
         LivingFluidTestEntity::new(0.0, 0.0, true).with_entity_type(&vanilla_entities::SILVERFISH);
     assert!(
@@ -1010,7 +1010,7 @@ fn assert_f64_close(left: f64, right: f64) {
 
 #[test]
 fn living_relative_portal_position_resets_forward_offset() {
-    init_test_registry();
+    init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
     entity
         .base()

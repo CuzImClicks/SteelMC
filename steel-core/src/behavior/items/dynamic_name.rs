@@ -55,9 +55,9 @@ mod tests {
             },
         },
         dye_color::DyeColor,
+        init_vanilla_registry,
         item_stack::ItemStack,
         resolvable_profile::{PlayerSkinPatch, ResolvableProfile},
-        test_support::init_test_registry,
         vanilla_items,
     };
     use steel_utils::{BlockPos, Identifier};
@@ -75,7 +75,7 @@ mod tests {
 
     #[test]
     fn every_mc26_dynamic_item_name_override_uses_stack_components() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         for potion_key in ["long_swiftness", "strong_swiftness"] {
             let potion = REGISTRY
@@ -155,7 +155,7 @@ mod tests {
 
     #[test]
     fn air_name_ignores_stack_item_name_patch() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let mut air = ItemStack::new(&vanilla_items::AIR);
         air.set(ITEM_NAME, TextComponent::plain("patched"));
@@ -168,7 +168,7 @@ mod tests {
 
     #[test]
     fn dynamic_name_prefix_ignores_stack_item_name_patch() {
-        init_test_registry();
+        init_vanilla_registry();
         init_behaviors();
         let healing = REGISTRY
             .potions
