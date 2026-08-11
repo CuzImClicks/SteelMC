@@ -4,7 +4,7 @@ use steel_registry::{
     data_components::vanilla_components::{ITEM_NAME, POTION_CONTENTS},
     item_stack::ItemStack,
 };
-use text_components::{TextComponent, content::Content, translation::TranslatedMessage};
+use text_components::{Args, TextComponent, content::Content, translation::TranslatedMessage};
 
 pub(super) fn default_name(stack: &ItemStack) -> Cow<'_, TextComponent> {
     stack
@@ -19,15 +19,12 @@ pub(super) fn description_id(stack: &ItemStack) -> Option<&str> {
     Some(message.key.as_ref())
 }
 
-pub(super) const fn translated(
-    key: String,
-    args: Option<Box<[TextComponent]>>,
-) -> Cow<'static, TextComponent> {
+pub(super) fn translated(key: String, args: impl Into<Args>) -> Cow<'static, TextComponent> {
     Cow::Owned(
         TranslatedMessage {
             key: Cow::Owned(key),
             fallback: None,
-            args,
+            args: args.into(),
         }
         .component(),
     )
@@ -44,7 +41,7 @@ pub(super) fn potion_name(stack: &ItemStack) -> Cow<'_, TextComponent> {
         .custom_name()
         .or_else(|| contents.potion().map(|potion| potion.value().name))
         .unwrap_or("empty");
-    translated(format!("{description_id}.effect.{suffix}"), None)
+    translated(format!("{description_id}.effect.{suffix}"), Args::None)
 }
 
 #[cfg(test)]
@@ -148,8 +145,8 @@ mod tests {
         assert_eq!(
             message
                 .args
-                .as_deref()
-                .and_then(|args| args.first())
+                .as_slice()
+                .first()
                 .map(ToString::to_string)
                 .as_deref(),
             Some("Notch")

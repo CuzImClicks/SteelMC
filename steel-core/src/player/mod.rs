@@ -714,9 +714,7 @@ impl Player {
         let death_message = TranslatedMessage {
             key: death_key.into(),
             fallback: None,
-            args: Some(Box::new([TextComponent::plain(
-                self.gameprofile.name.clone(),
-            )])),
+            args: [TextComponent::plain(self.gameprofile.name.clone())].into(),
         }
         .component();
 

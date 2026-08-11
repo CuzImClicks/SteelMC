@@ -1,17 +1,23 @@
-use steel_utils::serial::RawComponent;
-use text_components::{Style as _, text_nbt};
+use glam::DVec3;
+use text_components::{EncodedComponent, text_nbt};
 
 use super::{
     Arc, CEntityEvent, CGameEvent, CSystemChat, CTabList, CTickingState, CTickingStep, Color,
     CommandSender, CommandSource, ConnectionProtocol, DisplayResolutor, EncodedPacket, Entity,
-    GameEventType, NetworkConnection, Player, Server, SprintReport, TabListTickStats,
-    TextComponent, Uuid, client_permission_event, command_tree_packet, translations,
+    GameEventType, NetworkConnection, Player, Server, SprintReport, TabListTickStats, Uuid,
+    client_permission_event, command_tree_packet, translations,
 };
+
+const TAB_HEADER: EncodedComponent = text_nbt!("\n<yellow>Steel Dev Build</yellow>\n");
 
 impl Server {
     /// Logs and broadcasts a system chat message to online players.
-    fn broadcast_system_chat(&self, message: &TextComponent, excluded_player: Option<Uuid>) {
-        log::info!("{}", message.to_plain(&DisplayResolutor));
+    fn broadcast_system_chat(&self, message: EncodedComponent, excluded_player: Option<Uuid>) {
+        // logging is not worth failing a broadcast over
+        match message.to_plain(&DisplayResolutor) {
+            Ok(plain) => log::info!("{plain}"),
+            Err(error) => log::warn!("broadcast message did not decode for logging: {error}"),
+        }
         let Ok(encoded) = EncodedPacket::from_bare(
             CSystemChat::new(message, false),
             self.config.compression,
@@ -30,9 +36,8 @@ impl Server {
     /// Builds the tab list header/footer with recent and five-second tick statistics.
     pub(super) fn tab_list_components(
         tick_stats: TabListTickStats,
-    ) -> (impl Into<RawComponent>, impl Into<RawComponent>) {
-        const HEADER: &[u8] = text_nbt!("\n<yellow>Steel Dev Build</yellow>\n");
-
+        movement: DVec3,
+    ) -> EncodedComponent {
         // Color TPS based on value
         let tps_color = if tick_stats.tps >= 19.5 {
             Color::Green
@@ -54,38 +59,46 @@ impl Server {
         let average_color = mspt_color(tick_stats.average_mspt);
         let p95_color = mspt_color(tick_stats.p95_mspt);
 
-        let footer = text_nbt!(
-            "\n<gray>TPS: </gray><{tps_color}>{:.1}</{tps_color}>\
-             <dark_gray> | </dark_gray><gray>MSPT: </gray>\
-             <{recent_color}>{:.2}</{recent_color}><gray> recent | </gray>\
-             <{average_color}>{:.2}</{average_color}><gray> avg (5s) | </gray>\
-             <{p95_color}>{:.2}</{p95_color}><gray> p95</gray>\n",
-            tick_stats.tps,
-            tick_stats.recent_mspt,
-            tick_stats.average_mspt,
-            tick_stats.p95_mspt
-        );
+        let TabListTickStats {
+            tps,
+            recent_mspt,
+            average_mspt,
+            p95_mspt,
+        } = tick_stats;
 
-        (HEADER, footer)
+        text_nbt!(
+            "\n<gray>TPS: </gray><{tps_color}>{tps:.1}</{tps_color}>\
+             <dark_gray> | </dark_gray><gray>MSPT: </gray>\
+             <{recent_color}>{recent_mspt:.2}</{recent_color}><gray> recent | </gray>\
+             <{average_color}>{average_mspt:.2}</{average_color}><gray> avg (5s) | </gray>\
+             <{p95_color}>{p95_mspt:.2}</{p95_color}><gray> p95</gray>\n\
+             <gray>Movement: </gray><aqua>{:.2} bps</aqua>\n\
+             ",
+            movement.with_y(0.0).length() * 20.0,
+        )
     }
 
     /// Broadcasts the tab list header/footer with current TPS and MSPT statistics.
     pub(super) fn broadcast_tab_list(&self, tick_stats: TabListTickStats) {
-        let (header, footer) = Self::tab_list_components(tick_stats);
-
-        self.broadcast_to_online(CTabList::new(header, footer));
+        self.online_players.iter_players(|_uuid, player| {
+            player.send_packet(CTabList::new(
+                TAB_HEADER,
+                Self::tab_list_components(tick_stats, player.known_movement()),
+            ));
+            true
+        });
     }
 
     /// Broadcasts a sprint completion report to all players.
     pub(crate) fn broadcast_sprint_report(&self, report: &SprintReport) {
-        let message: TextComponent = translations::COMMANDS_TICK_SPRINT_REPORT
-            .message([
-                TextComponent::from(format!("{}", report.ticks_per_second)),
-                TextComponent::from(format!("{:.2}", report.ms_per_tick)),
-            ])
-            .into();
+        let message = text_nbt!(
+            "<lang:{}:'{}':'{:.2}'>",
+            &translations::COMMANDS_TICK_SPRINT_REPORT,
+            report.ticks_per_second,
+            report.ms_per_tick
+        );
 
-        self.broadcast_system_chat(&message, None);
+        self.broadcast_system_chat(message, None);
     }
 
     pub(super) fn broadcast_player_join_message(
@@ -96,25 +109,30 @@ impl Server {
         let display_name = player.display_name();
         // Fallback to the current name when the cache has no prior entry.
         let old_name = previous_name.unwrap_or(player.gameprofile.name.as_str());
-        let message: TextComponent = if player.gameprofile.name.eq_ignore_ascii_case(old_name) {
-            translations::MULTIPLAYER_PLAYER_JOINED
-                .message([display_name])
-                .into()
+        let message = if player.gameprofile.name.eq_ignore_ascii_case(old_name) {
+            text_nbt!(
+                "<yellow><lang:{}:'{@}'></yellow>",
+                &translations::MULTIPLAYER_PLAYER_JOINED,
+                display_name
+            )
         } else {
-            translations::MULTIPLAYER_PLAYER_JOINED_RENAMED
-                .message([display_name, TextComponent::plain(old_name.to_owned())])
-                .into()
+            text_nbt!(
+                "<yellow><lang:{}:'{@}':'{}'></yellow>",
+                &translations::MULTIPLAYER_PLAYER_JOINED_RENAMED,
+                display_name,
+                old_name
+            )
         };
-        let message = message.color(Color::Yellow);
-        self.broadcast_system_chat(&message, Some(player.gameprofile.id));
+        self.broadcast_system_chat(message, Some(player.gameprofile.id));
     }
 
     pub(super) fn broadcast_player_leave_message(&self, player: &Player) {
-        let message: TextComponent = translations::MULTIPLAYER_PLAYER_LEFT
-            .message([player.display_name()])
-            .into();
-        let message = message.color(Color::Yellow);
-        self.broadcast_system_chat(&message, None);
+        let message = text_nbt!(
+            "<yellow><lang:{}:'{@}'></yellow>",
+            &translations::MULTIPLAYER_PLAYER_LEFT,
+            player.display_name()
+        );
+        self.broadcast_system_chat(message, None);
     }
 
     /// Broadcasts the current tick rate and frozen state to all clients.

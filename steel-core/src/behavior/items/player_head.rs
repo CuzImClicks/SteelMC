@@ -72,7 +72,7 @@ impl ItemBehavior for PlayerHeadItem {
         };
         translated(
             format!("{description_id}.named"),
-            Some(Box::new([TextComponent::plain(name.to_owned())])),
+            [TextComponent::plain(name.to_owned())],
         )
     }
 }

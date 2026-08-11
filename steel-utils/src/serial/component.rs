@@ -5,7 +5,7 @@ use std::{
     io::{Result, Write},
 };
 
-use text_components::TextComponent;
+use text_components::{EncodedComponent, TextComponent};
 
 use crate::serial::WriteTo;
 
@@ -47,15 +47,9 @@ impl From<TextComponent> for RawComponent {
     }
 }
 
-impl From<Vec<u8>> for RawComponent {
-    fn from(bytes: Vec<u8>) -> Self {
-        Self(Cow::Owned(bytes))
-    }
-}
-
-impl From<&'static [u8]> for RawComponent {
-    fn from(bytes: &'static [u8]) -> Self {
-        Self(Cow::Borrowed(bytes))
+impl From<EncodedComponent> for RawComponent {
+    fn from(encoded: EncodedComponent) -> Self {
+        Self(encoded.into_bytes())
     }
 }
 

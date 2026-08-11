@@ -1,5 +1,5 @@
 use super::{
-    ATTACK_RANGE_BUFFER, CSetEntityMotion, ClipBlockShape, ClipFluid, DVec3, DamageSource,
+    ATTACK_RANGE_BUFFER, Args, CSetEntityMotion, ClipBlockShape, ClipFluid, DVec3, DamageSource,
     DamageType, ENTITY_INTERACTION_RANGE_BUFFER, EnchantmentDamageContext,
     EnchantmentPostAttackContext, Entity, EntityTypeRef, GameType, ITEM_BEHAVIORS, InteractionHand,
     InteractionResult, InventoryAccess, ItemStack, LivingEntity, PiercingWeapon, Player, SAttack,
@@ -22,7 +22,7 @@ impl Player {
         TranslatedMessage {
             key: "multiplayer.disconnect.invalid_entity_attacked".into(),
             fallback: None,
-            args: None,
+            args: Args::None,
         }
         .component()
     }

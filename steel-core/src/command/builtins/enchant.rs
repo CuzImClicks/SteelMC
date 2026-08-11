@@ -10,7 +10,7 @@ use steel_registry::{
 };
 use steel_utils::{Identifier, translations};
 use text_components::{
-    Modifier, Style, TextComponent, format::Color, translation::TranslatedMessage,
+    Args, Modifier, Style, TextComponent, format::Color, translation::TranslatedMessage,
 };
 
 use super::super::{
@@ -192,7 +192,7 @@ fn enchantment_display_name(enchantment: EnchantmentRef, level: u32) -> TextComp
             "enchantment.{}.{}",
             enchantment.key.namespace, enchantment.key.path
         )),
-        args: None,
+        args: Args::None,
         fallback: None,
     })
     .color(color);
@@ -203,7 +203,7 @@ fn enchantment_display_name(enchantment: EnchantmentRef, level: u32) -> TextComp
                 .add_child(TextComponent::plain(" "))
                 .add_child(TextComponent::translated(TranslatedMessage {
                     key: Cow::Owned(format!("enchantment.level.{level}")),
-                    args: None,
+                    args: Args::None,
                     fallback: None,
                 }));
     }

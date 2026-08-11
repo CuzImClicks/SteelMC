@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use steel_macros::item_behavior;
 use steel_registry::{data_components::vanilla_components::BASE_COLOR, item_stack::ItemStack};
-use text_components::TextComponent;
+use text_components::{Args, TextComponent};
 
 use crate::behavior::ItemBehavior;
 
@@ -23,7 +23,7 @@ impl ItemBehavior for ShieldItem {
         };
         translated(
             format!("{description_id}.{}", color.serialized_name()),
-            None,
+            Args::None,
         )
     }
 }

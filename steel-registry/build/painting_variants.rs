@@ -54,7 +54,7 @@ fn generate_text_component(component: &TextComponentJson) -> TokenStream {
         // Generate code that creates a TextComponent with color
         quote! {
             TextComponent {
-                content: Content::Translate(TranslatedMessage::new(#translate, None)),
+                content: Content::Translate(TranslatedMessage::new(#translate, text_components::Args::None)),
                 format: Format {
                     color: Some(#color),
                     font: None,
@@ -71,7 +71,7 @@ fn generate_text_component(component: &TextComponentJson) -> TokenStream {
         }
     } else {
         quote! {
-            TextComponent::translated(TranslatedMessage::new(#translate, None))
+            TextComponent::translated(TranslatedMessage::new(#translate, text_components::Args::None))
         }
     }
 }

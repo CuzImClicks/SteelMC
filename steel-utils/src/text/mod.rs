@@ -161,14 +161,12 @@ fn hash_content_fields(content: &Content, entries: &mut Vec<HashEntry>) {
                 entries.push(HashEntry::new(key_hasher, value_hasher));
             }
             // "with" field (optional args list)
-            if let Some(args) = &message.args
-                && !args.is_empty()
-            {
+            if !message.args.is_empty() {
                 let mut key_hasher = ComponentHasher::new();
                 key_hasher.put_string("with");
                 let mut value_hasher = ComponentHasher::new();
                 value_hasher.start_list();
-                for arg in args {
+                for arg in message.args.iter() {
                     value_hasher.put_component_hash(arg);
                 }
                 value_hasher.end_list();
@@ -830,7 +828,7 @@ mod tests {
         let component = TextComponent::translated(TranslatedMessage {
             key: Cow::Borrowed("test.message"),
             fallback: None,
-            args: Some(Box::new([TextComponent::plain("argument")])),
+            args: [TextComponent::plain("argument")].into(),
         })
         .add_child(TextComponent::plain("child"))
         .hover_event(HoverEvent::show_text("hover"));

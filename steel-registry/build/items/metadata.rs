@@ -17,7 +17,7 @@ pub(super) fn item_name_component_token(value: &Value) -> TokenStream {
         .and_then(Value::as_str)
         .unwrap_or_else(|| panic!("item_name component must contain a translate string"));
     quote! {
-        TextComponent::translated(TranslatedMessage::new(#translation, None))
+        TextComponent::translated(TranslatedMessage::new(#translation, text_components::Args::None))
     }
 }
 

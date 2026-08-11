@@ -22,11 +22,7 @@ use steel_registry::{
     vanilla_items,
 };
 use steel_utils::{BlockPos, ChunkPos, types::UpdateFlags};
-use steel_utils::{
-    codec::VarInt,
-    serial::{RawComponent, ReadFrom},
-    text::DisplayResolutor,
-};
+use steel_utils::{codec::VarInt, serial::ReadFrom, text::DisplayResolutor};
 use text_components::TextComponent;
 use tokio::{fs, runtime::Builder, task::JoinSet, time::sleep};
 use uuid::Uuid;
@@ -2496,20 +2492,21 @@ fn zero_thread_count_keeps_pool_default() {
 
 #[test]
 fn tab_list_distinguishes_recent_and_five_second_tick_times() {
-    let (_, footer) = Server::tab_list_components(TabListTickStats {
-        tps: 20.0,
-        recent_mspt: 1.02,
-        average_mspt: 7.84,
-        p95_mspt: 12.31,
-    });
+    let footer = Server::tab_list_components(
+        TabListTickStats {
+            tps: 20.0,
+            recent_mspt: 1.02,
+            average_mspt: 7.84,
+            p95_mspt: 12.31,
+        },
+        DVec3::ZERO,
+    );
 
-    let footer: RawComponent = footer.into();
-    let footer = TextComponent::read(&mut Cursor::new(footer.as_bytes()))
-        .expect("the tab list footer should decode");
+    let footer = footer.decode().expect("the tab list footer should decode");
 
     assert_eq!(
         footer.to_plain(&DisplayResolutor),
-        "\nTPS: 20.0 | MSPT: 1.02 recent | 7.84 avg (5s) | 12.31 p95\n"
+        "\nTPS: 20.0 | MSPT: 1.02 recent | 7.84 avg (5s) | 12.31 p95\nMovement: 0.00 bps\n"
     );
 }
 

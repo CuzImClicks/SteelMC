@@ -108,14 +108,14 @@ pub fn generate_text_component(component: &TextComponentJson) -> TokenStream {
     let translate = component.translate.as_str();
     let Some(color) = component.color.as_deref() else {
         return quote! {
-            TextComponent::translated(TranslatedMessage::new(#translate, None))
+            TextComponent::translated(TranslatedMessage::new(#translate, text_components::Args::None))
         };
     };
     let color = generate_text_color(color);
     quote! {
         TextComponent {
             content: text_components::content::Content::Translate(
-                TranslatedMessage::new(#translate, None),
+                TranslatedMessage::new(#translate, text_components::Args::None),
             ),
             format: text_components::format::Format {
                 color: Some(#color),

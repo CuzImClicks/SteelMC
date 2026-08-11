@@ -320,10 +320,8 @@ fn join_components(
 pub(super) fn validate_component_syntax(component: &TextComponent) -> Result<(), String> {
     match &component.content {
         Content::Translate(message) => {
-            if let Some(arguments) = &message.args {
-                for argument in arguments {
-                    validate_component_syntax(argument)?;
-                }
+            for argument in message.args.iter() {
+                validate_component_syntax(argument)?;
             }
         }
         Content::Object(Object::Atlas { fallback, .. } | Object::Player { fallback, .. }) => {

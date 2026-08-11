@@ -54,7 +54,7 @@ use steel_utils::{
     UuidExt as _, WorldAabb, axis::Axis, block_util::FoundRectangle, text::DisplayResolutor,
 };
 use text_components::{
-    Modifier as _, Style as _, TextComponent, interactivity::HoverEvent,
+    Args, Modifier as _, Style as _, TextComponent, interactivity::HoverEvent,
     translation::TranslatedMessage,
 };
 use uuid::Uuid;
@@ -88,15 +88,23 @@ fn entity_type_name(entity_type: EntityTypeRef) -> TextComponent {
             entity_type.key.namespace, entity_type.key.path
         )),
         fallback: None,
-        args: None,
+        args: Args::None,
     })
 }
 
 fn remove_entity_name_actions(mut component: TextComponent) -> TextComponent {
+    fn has_click(component: &TextComponent) -> bool {
+        component.interactions.click.is_some() || component.children.iter().any(has_click)
+    }
+
     fn remove_actions(component: &mut TextComponent) {
         component.interactions.click = None;
-        for child in component.children.to_mut() {
-            remove_actions(child);
+        // `to_mut` deep-clones a borrowed child list, so only pay for it when
+        // a descendant actually carries a click event.
+        if component.children.iter().any(has_click) {
+            for child in component.children.to_mut() {
+                remove_actions(child);
+            }
         }
     }
 
