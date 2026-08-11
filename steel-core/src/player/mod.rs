@@ -71,6 +71,7 @@ use steel_registry::{
     vanilla_game_events,
 };
 use steel_utils::{entity_events::EntityStatus, locks::Shared};
+use text_components::text_nbt;
 use tick_state::PlayerTickState;
 use uuid::Uuid;
 
@@ -864,20 +865,20 @@ impl Player {
             fallback: None,
             args: [TextComponent::plain(self.gameprofile.name.clone())].into(),
         }
-        .component();
+        .encode();
 
-        self.send_packet(CPlayerCombatKill {
-            player_id: self.id(),
-            message: if show_death_messages {
+        self.send_packet(CPlayerCombatKill::new(
+            self.id(),
+            if show_death_messages {
                 death_message.clone()
             } else {
-                TextComponent::const_plain("")
+                text_nbt!("")
             },
-        });
+        ));
 
         // TODO: team death message visibility (ALWAYS / HIDE_FOR_OTHER_TEAMS / HIDE_FOR_OWN_TEAM)
         if show_death_messages {
-            world.broadcast_system_chat(CSystemChat::new(&death_message, false));
+            world.broadcast_system_chat(CSystemChat::new(death_message, false));
         }
 
         if !world.get_game_rule(&KEEP_INVENTORY) && self.game_mode() != GameType::Spectator {
