@@ -5,7 +5,7 @@ mod config;
 use std::{convert::Infallible, fmt};
 
 use steel_utils::Identifier;
-use text_components::TextComponent;
+use text_components::{TextComponent, text};
 use tokio::{sync::oneshot, task::JoinHandle};
 
 use super::super::{
@@ -1219,10 +1219,7 @@ fn group_inheritance_list_operation(
         .collect::<Vec<_>>();
     Ok(OperationResult {
         result: count(parents.len()),
-        messages: vec![TextComponent::plain(format!(
-            "Group '{group}' inherits [{}]",
-            parents.join(", ")
-        ))],
+        messages: vec![text!("Group '{group}' inherits [{}]", parents.join(", "))],
     })
 }
 
@@ -1291,11 +1288,11 @@ fn groups_list_operation(source: &CommandSource) -> OperationResult {
         .collect::<Vec<_>>();
     OperationResult {
         result: count(groups.len()),
-        messages: vec![TextComponent::plain(format!(
+        messages: vec![text!(
             "Permission groups: defaults [{}], groups [{}]",
             defaults.join(", "),
             groups.join(", ")
-        ))],
+        )],
     }
 }
 

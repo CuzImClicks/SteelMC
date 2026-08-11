@@ -11,6 +11,7 @@ mod spam_throttler;
 
 pub use message_validator::LastSeenMessagesValidator;
 pub use signature_cache::{LastSeen, MessageCache};
+use steel_utils::serial::RawComponent;
 
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -315,8 +316,8 @@ impl Player {
     }
 
     /// Sends an overlay system message to the player
-    pub fn send_overlay_message(&self, text: &TextComponent) {
-        self.send_packet(CSystemChat::new(text, true, self));
+    pub fn send_overlay_message(&self, text: impl Into<RawComponent>) {
+        self.send_packet(CSystemChat::new(text, true));
     }
 
     /// Updates the player's chat session and initializes the message chain.
