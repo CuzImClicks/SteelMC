@@ -2,10 +2,10 @@ use glam::DVec3;
 use text_components::{EncodedComponent, text_nbt};
 
 use super::{
-    Arc, CEntityEvent, CGameEvent, CSystemChat, CTabList, CTickingState, CTickingStep, Color,
-    CommandSender, CommandSource, ConnectionProtocol, DisplayResolutor, EncodedPacket, Entity,
-    GameEventType, NetworkConnection, Player, Server, SprintReport, TabListTickStats, Uuid,
-    client_permission_event, command_tree_packet, translations,
+    Arc, CEntityEvent, CSystemChat, CTabList, CTickingState, CTickingStep, Color, CommandSender,
+    CommandSource, ConnectionProtocol, DisplayResolutor, EncodedPacket, Entity, NetworkConnection,
+    Player, Server, SprintReport, TabListTickStats, Uuid, client_permission_event,
+    command_tree_packet, translations,
 };
 
 const TAB_HEADER: EncodedComponent = text_nbt!("\n<yellow>Steel Dev Build</yellow>\n");
@@ -175,11 +175,6 @@ impl Server {
         self.resend_player_permission_context(player);
 
         self.send_ticking_state_to_player(player);
-
-        player.send_packet(CGameEvent {
-            event: GameEventType::ChangeGameMode,
-            data: player.game_mode().into(),
-        });
     }
 
     /// Resends the command tree and vanilla client permission-level projection.
