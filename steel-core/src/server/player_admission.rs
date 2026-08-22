@@ -517,7 +517,7 @@ impl Server {
                 existing_player.game_mode().into(),
                 existing_player.connection.latency(),
                 None,
-                true,
+                existing_player.shows_hat(),
             );
             player.send_packet(add_existing);
 
@@ -540,7 +540,7 @@ impl Server {
             player.game_mode().into(),
             player.connection.latency(),
             None,
-            true,
+            player.shows_hat(),
         );
         self.broadcast_to_online(player_info_packet);
     }
