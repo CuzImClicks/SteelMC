@@ -8,7 +8,10 @@ use super::{
     command_tree_packet, translations,
 };
 
-const TAB_HEADER: EncodedComponent = text_nbt!("\n<yellow>Steel Dev Build</yellow>\n");
+use crate::GIT_HASH_SHORT;
+
+const TAB_HEADER: EncodedComponent =
+    text_nbt!("\n<yellow>Steel Dev Build ({const GIT_HASH_SHORT})</yellow>\n");
 
 impl Server {
     /// Logs and broadcasts a system chat message to online players.
