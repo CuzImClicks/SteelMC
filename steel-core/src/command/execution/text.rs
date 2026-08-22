@@ -67,9 +67,8 @@ where
                 let values = self.source.selector_display_names(selector)?;
                 let separator = separator
                     .as_deref()
-                    .cloned()
-                    .unwrap_or_else(|| *Resolvable::entity_separator());
-                Ok(join_components(values, &separator))
+                    .unwrap_or(Resolvable::entity_separator());
+                Ok(join_components(values, separator))
             }
             Resolvable::Scoreboard {
                 selector,
@@ -146,14 +145,12 @@ where
             .nbt_source(source)?
             .into_iter()
             .flat_map(|tag| path.get(&tag));
-        let separator = separator
-            .cloned()
-            .unwrap_or_else(|| *Resolvable::nbt_separator());
+        let separator = separator.unwrap_or(Resolvable::nbt_separator());
 
         if !interpret {
             return Ok(join_components(
                 selected.map(|tag| command_nbt_component(&tag, plain)),
-                &separator,
+                separator,
             ));
         }
 
@@ -177,7 +174,7 @@ where
                 }
             }
         }
-        Ok(join_components(values, &separator))
+        Ok(join_components(values, separator))
     }
 }
 
@@ -535,7 +532,7 @@ mod tests {
                 path: "values[]".into(),
                 interpret: false,
                 plain: true,
-                separator: Some(Box::new(TextComponent::plain(" / "))),
+                separator: Some(TextComponent::plain(" / ").into()),
                 source: NbtSource::storage("minecraft:test"),
             }),
             ..Default::default()

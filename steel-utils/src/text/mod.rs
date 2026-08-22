@@ -264,7 +264,7 @@ fn hash_content_fields(content: &Content, entries: &mut Vec<HashEntry>) {
                     key_hasher.put_string("properties");
                     let mut value_hasher = ComponentHasher::new();
                     value_hasher.start_list();
-                    for property in &player.properties {
+                    for property in player.properties.iter() {
                         let mut entries: Vec<HashEntry> = Vec::new();
                         {
                             let mut key_hasher = ComponentHasher::new();
