@@ -80,14 +80,27 @@ pub fn main() {
 }
 
 fn git_output<const N: usize>(args: [&str; N]) -> String {
-    let output = Command::new("git")
+    Command::new("git")
         .args(args)
         .output()
-        .expect("git command shouldnt fail");
-    String::from_utf8(output.stdout)
-        .expect("should be valid utf-8")
-        .trim()
-        .to_owned()
+        .map_err(|e| e.to_string())
+        .and_then(|output| {
+            if output.status.success() {
+                String::from_utf8(output.stdout).map_err(|e| e.to_string())
+            } else {
+                Err(format!("exited with {}", output.status))
+            }
+        })
+        .map_or_else(
+            |e| {
+                println!(
+                    "cargo:warning=git {} failed, using \"unknown\": {e}",
+                    args.join(" ")
+                );
+                "unknown".to_owned()
+            },
+            |stdout| stdout.trim().to_owned(),
+        )
 }
 
 /// Items use `SCREAMING_SNAKE_CASE` statics (`vanilla_items::STONE`)
