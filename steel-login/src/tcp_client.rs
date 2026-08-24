@@ -504,8 +504,8 @@ impl JavaTcpClient {
                 let sequence_result = self.pre_play_state.lock().select_protocol(intent);
                 if let Err(error) = sequence_result {
                     log::warn!("Client {} {error}", self.id);
-                    self.kick(TextComponent::translated(
-                        translations::MULTIPLAYER_DISCONNECT_INVALID_PACKET.msg(),
+                    self.kick(TextComponent::from(
+                        &translations::MULTIPLAYER_DISCONNECT_INVALID_PACKET,
                     ))
                     .await;
                     return Ok(());
@@ -627,23 +627,22 @@ impl JavaTcpClient {
         error: PacketSequenceError,
     ) -> ConnectionAction {
         log::warn!("Client {} {error}", self.id);
-        self.kick(TextComponent::translated(
-            translations::MULTIPLAYER_DISCONNECT_INVALID_PACKET.msg(),
-        ))
-        .await;
+        self.kick(&translations::MULTIPLAYER_DISCONNECT_INVALID_PACKET)
+            .await;
         ConnectionAction::none()
     }
 
     /// Kicks the client with a given reason.
-    pub async fn kick(&self, reason: TextComponent) {
-        log::info!("Kicking client {}: {:p}", self.id, reason);
+    pub async fn kick(&self, reason: impl Into<TextComponent>) {
+        let reason = reason.into();
+        log::info!("Kicking client {}: {}", self.id, reason.to_plain(self));
         match self.protocol.load() {
             ConnectionProtocol::Login => {
-                let packet = CLoginDisconnect::new(&reason, self);
+                let packet = CLoginDisconnect::new(reason);
                 self.send_bare_packet_now(packet).await;
             }
             ConnectionProtocol::Play | ConnectionProtocol::Config => {
-                let packet = CDisconnect::new(&reason, self);
+                let packet = CDisconnect::new(&reason);
                 self.send_bare_packet_now(packet).await;
             }
             ConnectionProtocol::Handshake | ConnectionProtocol::Status => (),

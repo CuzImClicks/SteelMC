@@ -1,5 +1,6 @@
 use std::io::Cursor;
 use std::sync::{Arc, Weak};
+use text_components::EncodedComponent;
 
 use glam::DVec3;
 use simdnbt::borrow::{NbtCompound as NbtCompoundView, read_compound};
@@ -22,7 +23,6 @@ use steel_utils::locks::SyncMutex;
 use steel_utils::serial::ReadFrom as _;
 use steel_utils::types::{GameType, InteractionHand, UpdateFlags};
 use steel_utils::{BlockPos, ChunkPos, Direction, Downcast as _, SectionPos, WorldAabb};
-use text_components::TextComponent;
 
 use super::JukeboxBlock;
 use crate::behavior::blocks::{MAX_REDSTONE_SIGNAL, MIN_REDSTONE_SIGNAL};
@@ -72,7 +72,7 @@ impl NetworkConnection for RecordingConnection {
         self.packets.lock().extend(packets);
     }
 
-    fn disconnect_with_reason(&self, _reason: TextComponent) {}
+    fn disconnect_with_reason(&self, _reason: EncodedComponent) {}
 
     fn tick(&self) {}
 

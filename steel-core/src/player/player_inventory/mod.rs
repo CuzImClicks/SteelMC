@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use text_components::TextComponent;
+use text_components::EncodedComponent;
 
 use crate::{inventory::menu::Menu, player::Player, world::World};
 
@@ -118,12 +118,12 @@ enum DeferredMenuAction {
 type MenuFactory = Box<dyn for<'a> FnOnce(MenuOpenContext<'a>) -> Menu + Send + 'static>;
 
 struct PendingMenuOpen {
-    title: TextComponent,
+    title: EncodedComponent,
     create: MenuFactory,
 }
 
 struct PreparedMenu {
-    title: TextComponent,
+    title: EncodedComponent,
     menu: Menu,
 }
 

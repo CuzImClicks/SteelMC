@@ -69,7 +69,7 @@ pub struct RuntimeConfig {
     /// Whether vanilla floating/flying movement checks permit unauthorized flight.
     pub allow_flight: bool,
     /// The message of the day.
-    pub motd: String,
+    pub motd: TextComponent,
     /// Whether to use a favicon.
     pub use_favicon: bool,
     /// The path to the favicon.

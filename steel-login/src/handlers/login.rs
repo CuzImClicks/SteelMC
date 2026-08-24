@@ -22,7 +22,7 @@ impl JavaTcpClient {
         // The hello UUID is client supplied; only authentication or offline derivation is trusted.
         let requested_username = packet.name;
         if !is_valid_player_name(&requested_username) {
-            self.kick("Invalid player name".into()).await;
+            self.kick("Invalid player name").await;
             return ConnectionAction::none();
         }
 
@@ -74,12 +74,12 @@ impl JavaTcpClient {
             .private_key
             .decrypt(Pkcs1v15Encrypt, &packet.challenge)
         else {
-            self.kick("Invalid key".into()).await;
+            self.kick("Invalid key").await;
             return ConnectionAction::none();
         };
 
         if challenge_response != challenge {
-            self.kick("Invalid challenge response".into()).await;
+            self.kick("Invalid challenge response").await;
             return ConnectionAction::none();
         }
 
@@ -89,14 +89,14 @@ impl JavaTcpClient {
             .private_key
             .decrypt(Pkcs1v15Encrypt, &packet.key)
         else {
-            self.kick("Invalid key".into()).await;
+            self.kick("Invalid key").await;
             return ConnectionAction::none();
         };
 
         let secret_key: [u8; 16] = if let Ok(secret_key) = secret_key.try_into() {
             secret_key
         } else {
-            self.kick("Invalid key".into()).await;
+            self.kick("Invalid key").await;
             return ConnectionAction::none();
         };
 
@@ -104,7 +104,7 @@ impl JavaTcpClient {
             .connection_updates
             .send(ConnectionUpdate::EnableEncryption(secret_key))
         else {
-            self.kick("Failed to send connection update".into()).await;
+            self.kick("Failed to send connection update").await;
             return ConnectionAction::none();
         };
 
@@ -131,18 +131,18 @@ impl JavaTcpClient {
                 Ok(profile) => profile,
                 Err(error) => {
                     self.kick(match error {
-                        AuthError::FailedResponse => TextComponent::translated(
-                            translations::MULTIPLAYER_DISCONNECT_AUTHSERVERS_DOWN.msg(),
+                        AuthError::FailedResponse => TextComponent::from(
+                            &translations::MULTIPLAYER_DISCONNECT_AUTHSERVERS_DOWN,
                         ),
-                        AuthError::UnverifiedUsername => TextComponent::translated(
-                            translations::MULTIPLAYER_DISCONNECT_UNVERIFIED_USERNAME.msg(),
+                        AuthError::UnverifiedUsername => TextComponent::from(
+                            &translations::MULTIPLAYER_DISCONNECT_UNVERIFIED_USERNAME,
                         ),
                         AuthError::InvalidAuthServer(auth_server) => {
                             log::error!(
                                 "Invalid authentication server URL configured: {auth_server}"
                             );
-                            TextComponent::translated(
-                                translations::MULTIPLAYER_DISCONNECT_AUTHSERVERS_DOWN.msg(),
+                            TextComponent::from(
+                                &translations::MULTIPLAYER_DISCONNECT_AUTHSERVERS_DOWN,
                             )
                         }
                         e => e.to_string().into(),

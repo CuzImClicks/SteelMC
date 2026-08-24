@@ -117,7 +117,7 @@ mod tests {
                 sound_id: Identifier::vanilla_static("custom_song"),
                 fixed_range: Some(12.0),
             },
-            description: TextComponent::plain("Custom song"),
+            description: TextComponent::plain("Custom song").encode(),
             length_in_seconds: -1.0,
             comparator_output: 99,
         });

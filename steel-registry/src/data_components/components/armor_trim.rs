@@ -167,11 +167,11 @@ mod tests {
                     MaterialAssetInfo::new("custom").expect("test suffix should be valid"),
                     FxHashMap::default(),
                 ),
-                TextComponent::plain("Custom material"),
+                TextComponent::plain("Custom material").encode(),
             )),
             RegistryHolder::direct(TrimPatternValue::new(
                 Identifier::vanilla_static("custom"),
-                TextComponent::plain("Custom pattern"),
+                TextComponent::plain("Custom pattern").encode(),
                 true,
             )),
         );

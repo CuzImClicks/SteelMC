@@ -9,6 +9,7 @@ use std::{
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
+use text_components::EncodedComponent;
 
 use glam::DVec3;
 use steel_protocol::packet_traits::{CompressionInfo, EncodedPacket};
@@ -89,7 +90,7 @@ impl NetworkConnection for TestConnection {
         self.sent_packets.lock().extend(packets);
     }
 
-    fn disconnect_with_reason(&self, _reason: TextComponent) {}
+    fn disconnect_with_reason(&self, _reason: EncodedComponent) {}
 
     fn tick(&self) {}
 
@@ -124,7 +125,7 @@ impl NetworkConnection for RecordingConnection {
         self.packets.lock().extend(packets);
     }
 
-    fn disconnect_with_reason(&self, _reason: TextComponent) {}
+    fn disconnect_with_reason(&self, _reason: EncodedComponent) {}
 
     fn tick(&self) {}
 
@@ -151,7 +152,7 @@ fn test_runtime_config() -> Arc<RuntimeConfig> {
         services_server: None,
         encryption: false,
         allow_flight: false,
-        motd: String::new(),
+        motd: TextComponent::new(),
         use_favicon: false,
         favicon: String::new(),
         enforce_secure_chat: false,

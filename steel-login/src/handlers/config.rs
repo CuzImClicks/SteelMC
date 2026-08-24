@@ -135,7 +135,7 @@ impl JavaTcpClient {
             .send(ConnectionUpdate::Upgrade(Arc::clone(&connection)))
             .is_err()
         {
-            self.kick("Failed to update connection state".into()).await;
+            self.kick("Failed to update connection state").await;
             return ConnectionAction::none();
         }
 

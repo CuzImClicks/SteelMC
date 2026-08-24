@@ -17,7 +17,7 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_utils::Identifier;
 use steel_utils::translations::{COMMANDS_SETBLOCK_FAILED, COMMANDS_SETBLOCK_SUCCESS};
 use steel_utils::types::UpdateFlags;
-use text_components::TextComponent;
+use text_components::text;
 
 /// How the block should be placed
 enum SetBlockMode {
@@ -151,9 +151,9 @@ fn set_block(
     context.source().send_success(
         &COMMANDS_SETBLOCK_SUCCESS
             .message([
-                TextComponent::plain(format!("{}", block_pos.x())),
-                TextComponent::plain(format!("{}", block_pos.y())),
-                TextComponent::plain(format!("{}", block_pos.z())),
+                text!("{}", block_pos.x()),
+                text!("{}", block_pos.y()),
+                text!("{}", block_pos.z()),
             ])
             .component(),
         true,

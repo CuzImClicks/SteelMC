@@ -12,7 +12,7 @@ use steel_utils::{
     locks::Shared,
     types::{GameType, InteractionHand},
 };
-use text_components::TextComponent;
+use text_components::EncodedComponent;
 
 use crate::{
     entity::{Entity, LivingEntity as _, RemovalReason, entities::ItemEntity},
@@ -472,7 +472,7 @@ impl Player {
     /// menu, which must never be opened via `open_menu`).
     pub fn open_menu(
         &self,
-        title: impl Into<TextComponent>,
+        title: impl Into<EncodedComponent>,
         create: impl for<'a> FnOnce(MenuOpenContext<'a>) -> Menu + Send + 'static,
     ) {
         if !self.begin_menu_open_operation() {
@@ -535,7 +535,7 @@ impl Player {
         self.open_prepared_menu(title, menu);
     }
 
-    fn open_prepared_menu(&self, title: TextComponent, mut menu: Menu) {
+    fn open_prepared_menu(&self, title: EncodedComponent, mut menu: Menu) {
         loop {
             {
                 let mut open_menu = self.open_menu.lock();
@@ -574,13 +574,12 @@ impl Player {
             break;
         }
 
-        self.send_packet(COpenScreen {
-            container_id: i32::from(menu.container_id()),
-            menu_type: menu
-                .menu_type()
+        self.send_packet(COpenScreen::new(
+            i32::from(menu.container_id()),
+            menu.menu_type()
                 .expect("a menu opened via open_menu must declare a menu type"),
             title,
-        });
+        ));
 
         // Fire on_open before the full sync so anything the menu populates here
         // is included in the first render sent below.

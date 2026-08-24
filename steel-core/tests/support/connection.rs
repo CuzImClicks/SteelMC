@@ -1,7 +1,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use steel_protocol::packet_traits::{CompressionInfo, EncodedPacket};
-use text_components::TextComponent;
+use text_components::EncodedComponent;
 
 use crate::player::connection::NetworkConnection;
 
@@ -19,7 +19,7 @@ impl NetworkConnection for TestConnection {
 
     fn send_encoded_bundle(&self, _packets: Vec<EncodedPacket>) {}
 
-    fn disconnect_with_reason(&self, _reason: TextComponent) {
+    fn disconnect_with_reason(&self, _reason: EncodedComponent) {
         self.close();
     }
 

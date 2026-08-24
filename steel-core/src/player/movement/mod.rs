@@ -207,7 +207,7 @@ impl Player {
             packet.get_x_rot(0.0),
             packet.get_y_rot(0.0),
         ) {
-            self.disconnect(translations::MULTIPLAYER_DISCONNECT_INVALID_PLAYER_MOVEMENT.msg());
+            self.disconnect(&translations::MULTIPLAYER_DISCONNECT_INVALID_PLAYER_MOVEMENT);
             return;
         }
         if self.has_won_game() {
@@ -450,7 +450,7 @@ impl Player {
             packet.x_rot,
             packet.y_rot,
         ) {
-            self.disconnect(translations::MULTIPLAYER_DISCONNECT_INVALID_VEHICLE_MOVEMENT.msg());
+            self.disconnect(&translations::MULTIPLAYER_DISCONNECT_INVALID_VEHICLE_MOVEMENT);
             return;
         }
 
@@ -698,7 +698,7 @@ impl Player {
                 "{} was kicked for floating too long!",
                 self.gameprofile.name
             );
-            self.disconnect(translations::MULTIPLAYER_DISCONNECT_FLYING.msg());
+            self.disconnect(&translations::MULTIPLAYER_DISCONNECT_FLYING);
         }
 
         should_disconnect
@@ -729,7 +729,7 @@ impl Player {
                 "{} was kicked for floating a vehicle too long!",
                 self.gameprofile.name
             );
-            self.disconnect(translations::MULTIPLAYER_DISCONNECT_FLYING.msg());
+            self.disconnect(&translations::MULTIPLAYER_DISCONNECT_FLYING);
         }
 
         should_disconnect
@@ -846,7 +846,7 @@ impl Player {
             movement.reset_last_known_client_movement();
         } else if packet.teleport_id == tp.teleport_id && tp.awaiting_position.is_none() {
             drop(tp);
-            self.disconnect(translations::MULTIPLAYER_DISCONNECT_INVALID_PLAYER_MOVEMENT.msg());
+            self.disconnect(&translations::MULTIPLAYER_DISCONNECT_INVALID_PLAYER_MOVEMENT);
         }
     }
 

@@ -3,27 +3,27 @@ use std::io::{Result, Write};
 use steel_macros::ClientPacket;
 use steel_registry::{RegistryEntry, menu_type::MenuTypeRef, packets::play::C_OPEN_SCREEN};
 use steel_utils::{codec::VarInt, serial::WriteTo};
-use text_components::{TextComponent, resolving::TextResolutor};
+use text_components::EncodedComponent;
 
 #[derive(ClientPacket, Clone, Debug)]
 #[packet_id(Play = C_OPEN_SCREEN)]
 pub struct COpenScreen {
     pub container_id: i32,
     pub menu_type: MenuTypeRef,
-    pub title: TextComponent,
+    pub title: EncodedComponent,
 }
 
 impl COpenScreen {
-    pub fn new<T: TextResolutor>(
+    #[must_use]
+    pub fn new(
         container_id: i32,
         menu_type: MenuTypeRef,
-        title: &TextComponent,
-        player: &T,
+        title: impl Into<EncodedComponent>,
     ) -> Self {
         Self {
             container_id,
             menu_type,
-            title: title.resolve(player),
+            title: title.into(),
         }
     }
 }

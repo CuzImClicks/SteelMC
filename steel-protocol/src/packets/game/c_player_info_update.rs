@@ -2,7 +2,7 @@ use steel_macros::ClientPacket;
 use steel_registry::packets::play::C_PLAYER_INFO_UPDATE;
 use steel_utils::codec::VarInt;
 use steel_utils::serial::PrefixedWrite;
-use text_components::TextComponent;
+use text_components::EncodedComponent;
 use uuid::Uuid;
 
 // Import RemoteChatSessionData for chat session transmission
@@ -41,13 +41,13 @@ pub enum PlayerDisplayName {
     /// Use the player's default username (no custom display name).
     Reset,
     /// Use a custom display name.
-    Custom(Box<TextComponent>),
+    Custom(EncodedComponent),
 }
 
-impl From<Option<TextComponent>> for PlayerDisplayName {
-    fn from(opt: Option<TextComponent>) -> Self {
-        match opt {
-            Some(component) => Self::Custom(Box::new(component)),
+impl<T: Into<EncodedComponent>> From<Option<T>> for PlayerDisplayName {
+    fn from(name: Option<T>) -> Self {
+        match name {
+            Some(name) => Self::Custom(name.into()),
             None => Self::Reset,
         }
     }
@@ -153,7 +153,7 @@ impl CPlayerInfoUpdate {
         properties: Vec<GameProfileProperty>,
         game_mode: i32,
         latency: i32,
-        display_name: Option<TextComponent>,
+        display_name: Option<EncodedComponent>,
         show_hat: bool,
     ) -> Self {
         Self {
@@ -215,7 +215,7 @@ impl CPlayerInfoUpdate {
 
     /// Creates a packet to update a player's display name.
     #[must_use]
-    pub fn update_display_name(uuid: Uuid, display_name: Option<TextComponent>) -> Self {
+    pub fn update_display_name(uuid: Uuid, display_name: Option<EncodedComponent>) -> Self {
         Self {
             actions: PlayerInfoAction::UpdateDisplayName as u8,
             entries: vec![PlayerInfoEntry::new(uuid).with_display_name(display_name)],

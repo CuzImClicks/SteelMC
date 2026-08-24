@@ -9,7 +9,7 @@ use steel_protocol::packets::game::{
     ArgumentType as ProtocolArgumentType, SuggestionType as ProtocolSuggestionType,
 };
 use steel_utils::{DowncastType, DowncastTypeKey, Identifier};
-use text_components::TextComponent;
+use text_components::text;
 
 #[derive(Debug, PartialEq, Eq)]
 struct NegatedBooleanParser;
@@ -77,10 +77,9 @@ fn downstream_commands_can_register_primitive_keyed_and_suspended_nodes() {
                         let Ok(value) = context.value::<NegatedBoolean>("value") else {
                             return Err(CommandError::from("missing parsed negated boolean"));
                         };
-                        context.source().send_success(
-                            &TextComponent::plain(format!("negated value: {}", value.0)),
-                            false,
-                        );
+                        context
+                            .source()
+                            .send_success(&text!("negated value: {}", value.0), false);
                         Ok(i32::from(value.0))
                     },
                 ),

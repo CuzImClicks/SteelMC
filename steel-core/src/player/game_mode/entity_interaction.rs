@@ -1,12 +1,12 @@
 use super::{
-    ATTACK_RANGE_BUFFER, Args, CSetEntityMotion, ClipBlockShape, ClipFluid, DVec3, DamageSource,
+    ATTACK_RANGE_BUFFER, CSetEntityMotion, ClipBlockShape, ClipFluid, DVec3, DamageSource,
     DamageType, ENTITY_INTERACTION_RANGE_BUFFER, EnchantmentDamageContext,
     EnchantmentPostAttackContext, Entity, EntityTypeRef, GameType, ITEM_BEHAVIORS, InteractionHand,
     InteractionResult, InventoryAccess, ItemStack, LivingEntity, PiercingWeapon, Player, SAttack,
-    SInteract, SharedEntity, SoundEventHolder, SoundEventRef, TextComponent, TranslatedMessage,
-    World, WorldAabb, enchantment_helper, piercing_ray_hit_t, vanilla_attributes,
-    vanilla_damage_types, vanilla_entities,
+    SInteract, SharedEntity, SoundEventHolder, SoundEventRef, World, WorldAabb, enchantment_helper,
+    piercing_ray_hit_t, vanilla_attributes, vanilla_damage_types, vanilla_entities,
 };
+use steel_utils::translations;
 
 const fn sound_holder_ref(holder: &SoundEventHolder) -> Option<SoundEventRef> {
     match holder {
@@ -18,15 +18,6 @@ const fn sound_holder_ref(holder: &SoundEventHolder) -> Option<SoundEventRef> {
     }
 }
 impl Player {
-    fn invalid_entity_attacked_message() -> TextComponent {
-        TranslatedMessage {
-            key: "multiplayer.disconnect.invalid_entity_attacked".into(),
-            fallback: None,
-            args: Args::None,
-        }
-        .component()
-    }
-
     fn eye_position(&self) -> DVec3 {
         let position = self.position();
         DVec3::new(position.x, self.get_eye_y(), position.z)
@@ -598,7 +589,7 @@ impl Player {
         }
 
         if Self::is_invalid_attack_target(self.id(), target.id(), target.entity_type()) {
-            self.disconnect(Self::invalid_entity_attacked_message());
+            self.disconnect(&translations::MULTIPLAYER_DISCONNECT_INVALID_ENTITY_ATTACKED);
             log::warn!(
                 "Player {} tried to attack an invalid entity",
                 self.gameprofile.name

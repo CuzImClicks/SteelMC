@@ -28,7 +28,7 @@ pub(crate) fn command_suggestions_packet(
         .iter()
         .take(MAX_COMMAND_SUGGESTIONS)
         .map(|suggestion| match suggestion.tooltip() {
-            Some(tooltip) => SuggestionEntry::with_tooltip(suggestion.text(), tooltip.clone()),
+            Some(tooltip) => SuggestionEntry::with_tooltip(suggestion.text(), tooltip),
             None => SuggestionEntry::new(suggestion.text()),
         })
         .collect();
@@ -296,7 +296,7 @@ mod tests {
         assert_eq!(packet.start, 2);
         assert_eq!(packet.length, 2);
         assert_eq!(packet.suggestions[0].text, "value");
-        assert_eq!(packet.suggestions[0].tooltip.as_ref(), Some(&tooltip));
+        assert_eq!(packet.suggestions[0].tooltip, Some(tooltip.encode()));
     }
 
     #[test]

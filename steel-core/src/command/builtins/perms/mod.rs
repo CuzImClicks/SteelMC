@@ -806,13 +806,13 @@ async fn user_info_operation(
         } else {
             Vec::new()
         };
-        messages.push(TextComponent::plain(format!(
+        messages.push(text!(
             "{}: groups [{}], rules [{}], metadata [{}]",
             target.name,
             groups.join(", "),
             rules.join(", "),
             metadata.join(", ")
-        )));
+        ));
     }
     Ok(OperationResult {
         result: count(targets.len()),
@@ -862,12 +862,12 @@ async fn user_permission_operation(
         if result.1 {
             changed += 1;
         }
-        messages.push(TextComponent::plain(format!(
+        messages.push(text!(
             "{}: {} {}",
             target.name,
             state.map_or("unset", state_name),
             expression
-        )));
+        ));
     }
     Ok(OperationResult {
         result: changed,
@@ -908,10 +908,7 @@ async fn user_check_operation(
                 )
             },
         );
-        messages.push(TextComponent::plain(format!(
-            "{}: {} -> {detail}",
-            target.name, expression
-        )));
+        messages.push(text!("{}: {} -> {detail}", target.name, expression));
     }
     Ok(OperationResult {
         result: count(targets.len()),
@@ -961,14 +958,14 @@ async fn user_metadata_operation(
         if result.1 {
             changed += 1;
         }
-        messages.push(TextComponent::plain(format!(
+        messages.push(text!(
             "{}: {} {}",
             target.name,
             value
                 .as_ref()
                 .map_or_else(|| "unset".to_owned(), |value| format!("set {value}")),
             expression
-        )));
+        ));
     }
     Ok(OperationResult {
         result: changed,
@@ -1009,10 +1006,7 @@ async fn user_metadata_check_operation(
                 )
             },
         );
-        messages.push(TextComponent::plain(format!(
-            "{}: {} -> {detail}",
-            target.name, expression
-        )));
+        messages.push(text!("{}: {} -> {detail}", target.name, expression));
     }
     Ok(OperationResult {
         result: count(targets.len()),
@@ -1055,11 +1049,11 @@ async fn user_group_operation(
         if result.1 {
             changed += 1;
         }
-        messages.push(TextComponent::plain(format!(
+        messages.push(text!(
             "{}: {} group {group}",
             target.name,
             if add { "added" } else { "removed" }
-        )));
+        ));
     }
     Ok(OperationResult {
         result: changed,
@@ -1106,14 +1100,14 @@ fn group_info_operation(
         .collect::<Vec<_>>();
     Ok(OperationResult {
         result: 1,
-        messages: vec![TextComponent::plain(format!(
+        messages: vec![text!(
             "Group '{group}': priority {}, inherits [{}], allow [{}], deny [{}], metadata [{}]",
             group_config.priority,
             inherits.join(", "),
             allow.join(", "),
             deny.join(", "),
             metadata.join(", ")
-        ))],
+        )],
     })
 }
 

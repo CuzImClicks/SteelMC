@@ -5,6 +5,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
 };
+use text_components::EncodedComponent;
 
 use steel_protocol::packet_traits::{CompressionInfo, EncodedPacket};
 use steel_registry::packets::play::C_SET_PLAYER_INVENTORY;
@@ -13,9 +14,9 @@ use steel_utils::codec::VarInt;
 use steel_utils::locks::{IntoShared as _, Shared, SyncMutex};
 use steel_utils::serial::ReadFrom as _;
 use steel_utils::types::GameType;
-use text_components::TextComponent;
 
 use super::*;
+use crate::entity::Entity as _;
 use crate::{
     entity::PendingWorldChangeToken,
     inventory::{
@@ -62,7 +63,7 @@ impl NetworkConnection for RecordingConnection {
         self.packets.lock().extend(packets);
     }
 
-    fn disconnect_with_reason(&self, _reason: TextComponent) {}
+    fn disconnect_with_reason(&self, _reason: EncodedComponent) {}
 
     fn tick(&self) {}
 

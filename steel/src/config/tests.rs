@@ -161,7 +161,12 @@ fn configured_auth_server_flows_to_runtime_config() {
 
     assert_eq!(config.server.auth_server.as_deref(), Some(auth_server));
     assert_eq!(
-        config.server.into_runtime_config().auth_server.as_deref(),
+        config
+            .server
+            .into_runtime_config()
+            .expect("config should render")
+            .auth_server
+            .as_deref(),
         Some(auth_server)
     );
 }
@@ -183,6 +188,7 @@ fn configured_profile_server_flows_to_runtime_config() {
         config
             .server
             .into_runtime_config()
+            .expect("config should render")
             .profile_server
             .as_deref(),
         Some(profile_server)
@@ -206,6 +212,7 @@ fn configured_services_server_flows_to_runtime_config() {
         config
             .server
             .into_runtime_config()
+            .expect("config should render")
             .services_server
             .as_deref(),
         Some(services_server)
@@ -228,10 +235,18 @@ fn configured_thread_counts_parse_and_flow_to_runtime_config() {
     assert_eq!(config.server.threads.chunk_generation, Some(6));
     assert_eq!(config.server.threads.chunk_encoding, Some(7));
     assert_eq!(
-        config.server.clone().into_runtime_config().packet_workers,
+        config
+            .server
+            .clone()
+            .into_runtime_config()
+            .expect("config should render")
+            .packet_workers,
         Some(5)
     );
-    let runtime_config = config.server.into_runtime_config();
+    let runtime_config = config
+        .server
+        .into_runtime_config()
+        .expect("config should render");
     assert_eq!(runtime_config.chunk_generation_threads, Some(6));
     assert_eq!(runtime_config.chunk_encoding_threads, Some(7));
 }

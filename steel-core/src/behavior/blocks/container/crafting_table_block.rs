@@ -7,7 +7,6 @@ use std::sync::Arc;
 use steel_macros::block_behavior;
 use steel_registry::blocks::BlockRef;
 use steel_utils::{BlockPos, BlockStateId, translations};
-use text_components::TextComponent;
 
 use crate::behavior::InventoryAccess;
 use crate::behavior::block::BlockBehavior;
@@ -48,10 +47,9 @@ impl BlockBehavior for CraftingTableBlock {
         _inv: &mut InventoryAccess,
     ) -> InteractionResult {
         let inventory = player.inventory.clone();
-        player.open_menu(
-            TextComponent::translated(translations::CONTAINER_CRAFTING.msg()),
-            move |context| crafting(inventory, context.container_id, pos),
-        );
+        player.open_menu(&translations::CONTAINER_CRAFTING, move |context| {
+            crafting(inventory, context.container_id, pos)
+        });
         // TODO: Award stat INTERACT_WITH_CRAFTING_TABLE
         InteractionResult::Success
     }

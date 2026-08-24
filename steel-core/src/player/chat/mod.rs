@@ -11,7 +11,6 @@ mod spam_throttler;
 
 pub use message_validator::LastSeenMessagesValidator;
 pub use signature_cache::{LastSeen, MessageCache};
-use steel_utils::serial::RawComponent;
 
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -23,11 +22,8 @@ use steel_protocol::packets::game::{
 };
 use steel_registry::{RegistryEntry, vanilla_chat_types};
 use steel_utils::translations;
-use text_components::TextComponent;
-use text_components::interactivity::{ClickEvent, HoverEvent};
-use text_components::{Modifier, Style};
+use text_components::{EncodedComponent, TextComponent};
 
-use crate::entity::Entity;
 use crate::player::Player;
 use message_chain::SignedMessageChain;
 use profile_key::RemoteChatSession;
@@ -136,7 +132,7 @@ impl Player {
         };
 
         if should_disconnect {
-            self.disconnect(translations::DISCONNECT_SPAM.msg());
+            self.disconnect(&translations::DISCONNECT_SPAM);
         }
     }
 
@@ -148,7 +144,7 @@ impl Player {
         };
 
         if should_disconnect {
-            self.disconnect(translations::DISCONNECT_SPAM.msg());
+            self.disconnect(&translations::DISCONNECT_SPAM);
         }
     }
 
@@ -293,21 +289,11 @@ impl Player {
             packet.timestamp,
             packet.salt,
             Box::new([]),
-            Some(TextComponent::plain(chat_message.clone())),
+            Some(TextComponent::plain(chat_message.clone()).encode()),
             FilterType::PassThrough,
             ChatTypeBound {
                 registry_id,
-                sender_name: TextComponent::plain(player.gameprofile.name.clone())
-                    .insertion(player.gameprofile.name.clone())
-                    .click_event(ClickEvent::suggest_command(format!(
-                        "/tell {} ",
-                        player.gameprofile.name
-                    )))
-                    .hover_event(HoverEvent::show_entity(
-                        "minecraft:player",
-                        self.uuid(),
-                        Some(player.gameprofile.name.clone()),
-                    )),
+                sender_name: player.encoded_display_name(),
                 target_name: None,
             },
         );
@@ -348,7 +334,7 @@ impl Player {
     }
 
     /// Sends an overlay system message to the player
-    pub fn send_overlay_message(&self, text: impl Into<RawComponent>) {
+    pub fn send_overlay_message(&self, text: impl Into<EncodedComponent>) {
         self.send_packet(CSystemChat::new(text, true));
     }
 
@@ -450,7 +436,7 @@ impl Player {
                 );
             }
             ChatSessionUpdateOutcome::ExpiryDowngrade => {
-                self.disconnect(translations::MULTIPLAYER_DISCONNECT_EXPIRED_PUBLIC_KEY.msg());
+                self.disconnect(&translations::MULTIPLAYER_DISCONNECT_EXPIRED_PUBLIC_KEY);
             }
             ChatSessionUpdateOutcome::Accepted(session) => self.set_chat_session(session),
             ChatSessionUpdateOutcome::Invalid(error) => {

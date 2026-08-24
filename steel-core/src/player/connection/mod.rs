@@ -15,7 +15,7 @@ use steel_protocol::packets::common::{
 };
 use steel_protocol::packets::game::CPlayerInfoUpdate;
 use steel_protocol::utils::ConnectionProtocol;
-use text_components::TextComponent;
+use text_components::EncodedComponent;
 
 use crate::player::Player;
 
@@ -91,7 +91,7 @@ pub trait NetworkConnection: Send + Sync {
     fn send_encoded_bundle(&self, packets: Vec<EncodedPacket>);
 
     /// Disconnects the player with a reason.
-    fn disconnect_with_reason(&self, reason: TextComponent);
+    fn disconnect_with_reason(&self, reason: EncodedComponent);
 
     /// Performs per-tick connection maintenance (e.g., keep-alive).
     fn tick(&self);
@@ -131,7 +131,7 @@ impl NetworkConnection for Box<dyn NetworkConnection> {
         (**self).send_encoded_bundle(packets);
     }
 
-    fn disconnect_with_reason(&self, reason: TextComponent) {
+    fn disconnect_with_reason(&self, reason: EncodedComponent) {
         (**self).disconnect_with_reason(reason);
     }
 
@@ -189,7 +189,7 @@ impl Player {
     }
 
     /// Disconnects the player with a reason message.
-    pub fn disconnect(&self, reason: impl Into<TextComponent>) {
+    pub fn disconnect(&self, reason: impl Into<EncodedComponent>) {
         self.connection.disconnect_with_reason(reason.into());
     }
 

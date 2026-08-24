@@ -1,6 +1,7 @@
 use serde::Serialize;
 use steel_macros::{ClientPacket, WriteTo};
 use steel_registry::packets::status::C_STATUS_RESPONSE;
+use text_components::TextComponent;
 
 #[derive(Serialize, Clone, Debug)]
 pub struct Sample {
@@ -26,7 +27,7 @@ pub struct Version {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Status {
-    pub description: String,
+    pub description: TextComponent,
     pub players: Option<Players>,
     pub version: Option<Version>,
     pub favicon: Option<String>,
@@ -50,11 +51,12 @@ impl CStatusResponse {
 #[cfg(test)]
 mod tests {
     use super::Status;
+    use text_components::TextComponent;
 
     #[test]
     fn secure_chat_enforcement_uses_vanilla_json_name() {
         let status = Status {
-            description: String::new(),
+            description: TextComponent::new(),
             players: None,
             version: None,
             favicon: None,

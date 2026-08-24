@@ -105,7 +105,7 @@ impl PacketProcessor {
             ?error,
             "Disconnecting player after inbound packet admission limit"
         );
-        player.disconnect(translations::DISCONNECT_EXCEEDED_PACKET_RATE.msg());
+        player.disconnect(&translations::DISCONNECT_EXCEEDED_PACKET_RATE);
         self.queued.discard_lane(lane_key);
     }
 

@@ -2,7 +2,7 @@ use rustc_hash::FxHashMap;
 use simdnbt::ToNbtTag;
 use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
-use text_components::{EmbeddedNbtCodec, TextComponent};
+use text_components::{EmbeddedNbtCodec, EncodedComponent};
 
 use crate::RegistryTags;
 
@@ -13,8 +13,8 @@ pub struct Dialog {
     pub button_width: i32,
     pub columns: i32,
     pub exit_action: ExitAction,
-    pub external_title: TextComponent,
-    pub title: TextComponent,
+    pub external_title: EncodedComponent,
+    pub title: EncodedComponent,
     pub variant: DialogVariant,
 }
 
@@ -30,7 +30,7 @@ pub enum DialogVariant {
 /// Represents an exit action with a label and width.
 #[derive(Debug)]
 pub struct ExitAction {
-    pub label: TextComponent,
+    pub label: EncodedComponent,
     pub width: i32,
 }
 
@@ -45,12 +45,12 @@ impl ToNbtTag for &Dialog {
                 DialogVariant::ServerLinks => "minecraft:server_links",
             },
         );
-        compound.insert("title", self.title.to_codec_nbt());
-        compound.insert("external_title", self.external_title.to_codec_nbt());
+        compound.insert("title", self.title.to_nbt_tag());
+        compound.insert("external_title", self.external_title.to_nbt_tag());
         compound.insert("button_width", self.button_width);
         compound.insert("columns", self.columns);
         let mut exit_action = NbtCompound::new();
-        exit_action.insert("label", self.exit_action.label.to_codec_nbt());
+        exit_action.insert("label", self.exit_action.label.to_nbt_tag());
         exit_action.insert("width", self.exit_action.width);
         compound.insert("exit_action", NbtTag::Compound(exit_action));
         if let DialogVariant::DialogList { dialogs } = &self.variant {

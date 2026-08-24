@@ -9,7 +9,7 @@ use steel_utils::Identifier;
 use steel_utils::hash::{ComponentHasher, HashComponent, HashEntry, sort_map_entries};
 use steel_utils::nbt::NbtNumeric as _;
 use steel_utils::serial::{ReadFrom, WriteTo};
-use text_components::TextComponent;
+use text_components::{EncodedComponent, TextComponent};
 
 use crate::{REGISTRY, RegistryExt, RegistryHolderEntry, RegistryTags};
 
@@ -17,13 +17,13 @@ use crate::{REGISTRY, RegistryExt, RegistryHolderEntry, RegistryTags};
 #[derive(Debug, Clone, PartialEq)]
 pub struct TrimPatternValue {
     asset_id: Identifier,
-    description: TextComponent,
+    description: EncodedComponent,
     decal: bool,
 }
 
 impl TrimPatternValue {
     #[must_use]
-    pub const fn new(asset_id: Identifier, description: TextComponent, decal: bool) -> Self {
+    pub const fn new(asset_id: Identifier, description: EncodedComponent, decal: bool) -> Self {
         Self {
             asset_id,
             description,
@@ -37,7 +37,7 @@ impl TrimPatternValue {
     }
 
     #[must_use]
-    pub const fn description(&self) -> &TextComponent {
+    pub const fn description(&self) -> &EncodedComponent {
         &self.description
     }
 
@@ -49,7 +49,7 @@ impl TrimPatternValue {
     fn to_nbt_tag_ref(&self) -> NbtTag {
         let mut compound = NbtCompound::new();
         compound.insert("asset_id", self.asset_id.clone());
-        compound.insert("description", self.description.to_codec_nbt());
+        compound.insert("description", self.description.to_nbt_tag());
         compound.insert("decal", self.decal);
         NbtTag::Compound(compound)
     }
@@ -58,7 +58,7 @@ impl TrimPatternValue {
 impl WriteTo for TrimPatternValue {
     fn write(&self, writer: &mut impl Write) -> Result<()> {
         self.asset_id.write(writer)?;
-        WriteTo::write(&self.description.to_codec_nbt(), writer)?;
+        self.description.write(writer)?;
         self.decal.write(writer)
     }
 }
@@ -67,7 +67,7 @@ impl ReadFrom for TrimPatternValue {
     fn read(data: &mut Cursor<&[u8]>) -> Result<Self> {
         Ok(Self::new(
             Identifier::read(data)?,
-            TextComponent::read(data)?,
+            TextComponent::read(data)?.encode(),
             bool::read(data)?,
         ))
     }
@@ -84,7 +84,7 @@ impl FromNbtTag for TrimPatternValue {
         let compound = tag.compound()?;
         Some(Self::new(
             Identifier::from_nbt_tag(compound.get("asset_id")?)?,
-            TextComponent::from_nbt(&compound.get("description")?.to_owned())?,
+            TextComponent::from_nbt(&compound.get("description")?.to_owned())?.encode(),
             compound
                 .get("decal")
                 .map_or(Some(false), |decal| decal.codec_bool())?,

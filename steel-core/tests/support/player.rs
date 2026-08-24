@@ -1,4 +1,5 @@
 use std::sync::{Arc, Weak};
+use text_components::TextComponent;
 
 use uuid::Uuid;
 
@@ -20,7 +21,7 @@ pub(crate) fn test_runtime_config(max_players: u32) -> Arc<RuntimeConfig> {
         services_server: None,
         encryption: false,
         allow_flight: false,
-        motd: String::new(),
+        motd: TextComponent::new(),
         use_favicon: false,
         favicon: String::new(),
         enforce_secure_chat: false,

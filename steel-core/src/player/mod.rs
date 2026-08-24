@@ -82,7 +82,7 @@ use steel_utils::types::{Difficulty, GameType, InteractionHand};
 use text_components::resolving::TextResolutor;
 use text_components::translation::TranslatedMessage;
 use text_components::{
-    Modifier as _, Style as _, TextComponent,
+    EncodedComponent, Modifier as _, Style as _, TextComponent,
     interactivity::{ClickEvent, HoverEvent},
 };
 use text_components::{content::Resolvable, custom::CustomData};
@@ -133,6 +133,9 @@ use steel_utils::{
 
 use crate::inventory::container::Container;
 
+/// The empty component sent when death messages are off.
+const EMPTY_MESSAGE: EncodedComponent = text_nbt!("");
+
 const RESPAWN_SEARCH_READY_CANDIDATE_BUDGET: usize = 8;
 const HAT_MODEL_PART_MASK: i8 = 0b0100_0000;
 
@@ -148,6 +151,10 @@ use crate::world::World;
 pub struct Player {
     /// The player's game profile.
     pub gameprofile: GameProfile,
+    /// The player's name with its tell suggestion, entity hover and insertion.
+    display_name: TextComponent,
+    /// The display name pre-encoded for the wire.
+    encoded_display_name: EncodedComponent,
     /// The player's connection (abstracted for testing).
     pub connection: Arc<PlayerConnection>,
 
@@ -484,6 +491,12 @@ impl Player {
         self.game_modes.lock().change_current(game_mode)
     }
 
+    /// The display name pre-encoded for the wire.
+    #[must_use]
+    pub fn encoded_display_name(&self) -> EncodedComponent {
+        self.encoded_display_name.clone()
+    }
+
     /// Creates a new player.
     pub fn new(
         gameprofile: GameProfile,
@@ -505,9 +518,23 @@ impl Player {
         let world_ref = Arc::downgrade(&world);
         let chat_spam_threshold_seconds = config.chat_spam_threshold_seconds;
         let command_spam_threshold_seconds = config.command_spam_threshold_seconds;
+        let display_name = TextComponent::plain(gameprofile.name.clone())
+            .insertion(gameprofile.name.clone())
+            .click_event(ClickEvent::suggest_command(format!(
+                "/tell {} ",
+                gameprofile.name
+            )))
+            .hover_event(HoverEvent::show_entity(
+                "minecraft:player",
+                player_uuid,
+                Some(gameprofile.name.clone()),
+            ));
+        let encoded_display_name = display_name.encode();
 
         Self {
             gameprofile,
+            display_name,
+            encoded_display_name,
             connection,
 
             world: ArcSwap::new(world),
@@ -901,7 +928,7 @@ impl Player {
             if show_death_messages {
                 death_message.clone()
             } else {
-                text_nbt!("")
+                EMPTY_MESSAGE
             },
         ));
 
@@ -1254,17 +1281,7 @@ impl Entity for Player {
     }
 
     fn display_name(&self) -> TextComponent {
-        self.name()
-            .click_event(ClickEvent::suggest_command(format!(
-                "/tell {} ",
-                self.gameprofile.name
-            )))
-            .hover_event(HoverEvent::show_entity(
-                "minecraft:player",
-                self.uuid(),
-                Some(self.name()),
-            ))
-            .insertion(self.gameprofile.name.clone())
+        self.display_name.clone()
     }
 
     fn plain_text_name(&self) -> String {

@@ -1,6 +1,6 @@
 use steel_macros::ClientPacket;
 use steel_registry::packets::play::C_TAB_LIST;
-use steel_utils::serial::RawComponent;
+use text_components::EncodedComponent;
 
 /// Packet to set the tab list header and footer.
 /// This allows servers to display custom text above and below the player list.
@@ -8,9 +8,9 @@ use steel_utils::serial::RawComponent;
 #[packet_id(Play = C_TAB_LIST)]
 pub struct CTabList {
     /// The header text component (displayed above the player list)
-    pub header: RawComponent,
+    pub header: EncodedComponent,
     /// The footer text component (displayed below the player list)
-    pub footer: RawComponent,
+    pub footer: EncodedComponent,
 }
 
 impl CTabList {
@@ -18,7 +18,7 @@ impl CTabList {
     ///
     /// Both must already be resolved for their recipients.
     #[must_use]
-    pub fn new(header: impl Into<RawComponent>, footer: impl Into<RawComponent>) -> Self {
+    pub fn new(header: impl Into<EncodedComponent>, footer: impl Into<EncodedComponent>) -> Self {
         Self {
             header: header.into(),
             footer: footer.into(),

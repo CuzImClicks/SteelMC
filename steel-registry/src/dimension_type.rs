@@ -2,6 +2,7 @@ use rustc_hash::FxHashMap;
 use simdnbt::ToNbtTag;
 use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
+use text_components::translation::Translation;
 
 use crate::sound_event::SoundEventRef;
 use crate::world_clock::WorldClockRef;
@@ -11,7 +12,7 @@ pub struct BedRule {
     pub can_set_spawn: BedRuleValue,
     pub can_sleep: BedRuleValue,
     pub explodes: bool,
-    pub error_message_key: Option<&'static str>,
+    pub error_message_key: Option<&'static Translation<0>>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -260,7 +261,7 @@ impl ToNbtTag for &DimensionType {
             }
             if let Some(key) = self.bed_rule.error_message_key {
                 let mut msg = NbtCompound::new();
-                msg.insert("translate", key);
+                msg.insert("translate", key.0);
                 bed_rule.insert("error_message", NbtTag::Compound(msg));
             }
             attributes.insert("minecraft:gameplay/bed_rule", NbtTag::Compound(bed_rule));

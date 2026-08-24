@@ -43,7 +43,7 @@ use steel_utils::{
     translations,
     types::GameType,
 };
-use text_components::TextComponent;
+use text_components::{TextComponent, text};
 
 /// Axes selected by vanilla's coordinate swizzle argument.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -1398,9 +1398,9 @@ where
     if source.domain_exists(domain) {
         return Ok(domain.into());
     }
-    Err(reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(
-        TextComponent::from(format!("Unknown domain {domain}")),
-    ))))
+    Err(reader.error(CommandSyntaxErrorKind::Dynamic(Box::new(text!(
+        "Unknown domain {domain}"
+    )))))
 }
 
 pub(super) fn parse_identifier(

@@ -4,6 +4,7 @@ use steel_core::{
     chunk::chunk_ticket_manager::MAX_SUPPORTED_VIEW_DISTANCE,
     config::{CompressionInfo, RuntimeConfig, ServerLinks, validate_login_security},
 };
+use text_components::minimessage::{Error as MiniMessageError, MiniMessage};
 
 const fn default_spam_threshold_seconds() -> i32 {
     10
@@ -72,9 +73,13 @@ pub struct ServerConfig {
 
 impl ServerConfig {
     /// Extracts the `RuntimeConfig` from this full config.
-    #[must_use]
-    pub fn into_runtime_config(self) -> RuntimeConfig {
-        RuntimeConfig {
+    /// Turns the parsed config into the runtime one, rendering the [`MiniMessage`] motd.
+    ///
+    /// # Errors
+    /// If the motd is not a valid [`MiniMessage`] template.
+    pub fn into_runtime_config(self) -> Result<RuntimeConfig, MiniMessageError> {
+        let motd = MiniMessage::new(&self.motd)?.fill(&[])?;
+        Ok(RuntimeConfig {
             max_players: self.max_players,
             view_distance: self.view_distance,
             simulation_distance: self.simulation_distance,
@@ -85,7 +90,7 @@ impl ServerConfig {
             services_server: self.services_server,
             encryption: self.encryption,
             allow_flight: self.allow_flight,
-            motd: self.motd,
+            motd,
             use_favicon: self.use_favicon,
             favicon: self.favicon,
             enforce_secure_chat: self.enforce_secure_chat,
@@ -96,7 +101,7 @@ impl ServerConfig {
             packet_workers: self.threads.packet_workers,
             chunk_generation_threads: self.threads.chunk_generation,
             chunk_encoding_threads: self.threads.chunk_encoding,
-        }
+        })
     }
 }
 

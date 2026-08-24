@@ -83,10 +83,12 @@ impl Default for ItemLore {
     }
 }
 
+/// The style vanilla mixes into every lore line for display.
+const LORE_STYLE: Format = Format::new().color(Color::DarkPurple).italic(true);
+
 fn styled_line(line: &TextComponent) -> TextComponent {
-    let lore_style = Format::new().color(Color::DarkPurple).italic(true);
     let mut styled = line.clone();
-    styled.format = styled.format.mix(&lore_style);
+    styled.format = styled.format.mix(&LORE_STYLE);
     styled
 }
 

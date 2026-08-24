@@ -494,7 +494,7 @@ mod tests {
                     sound_id: Identifier::vanilla_static("jukebox_test_direct"),
                     fixed_range: None,
                 },
-                description: TextComponent::plain("Direct test song"),
+                description: TextComponent::plain("Direct test song").encode(),
                 length_in_seconds: 1.0,
                 comparator_output: 1,
             }),

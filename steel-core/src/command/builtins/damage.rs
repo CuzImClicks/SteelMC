@@ -12,7 +12,7 @@ use crate::entity::damage::DamageSource;
 use steel_registry::vanilla_damage_types;
 use steel_utils::Identifier;
 use steel_utils::translations::{COMMANDS_DAMAGE_INVULNERABLE, COMMANDS_DAMAGE_SUCCESS};
-use text_components::TextComponent;
+use text_components::text;
 
 pub(super) fn registration() -> CommandRegistration<CommandSource> {
     CommandRegistration::new(Identifier::vanilla_static("damage"), |_| command())
@@ -85,10 +85,7 @@ fn damage(context: &SteelCommandContext<CommandSource>) -> Result<i32, CommandSy
     if target.hurt(&target_world, &damage_source, amount) {
         context.source().send_success(
             &COMMANDS_DAMAGE_SUCCESS
-                .message([
-                    TextComponent::plain(format!("{amount:?}")),
-                    target.display_name(),
-                ])
+                .message([text!("{amount:?}"), target.display_name()])
                 .component(),
             true,
         );

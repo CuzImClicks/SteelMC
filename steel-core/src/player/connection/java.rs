@@ -28,7 +28,7 @@ use steel_utils::translations;
 use text_components::content::Resolvable;
 use text_components::custom::CustomData;
 use text_components::resolving::TextResolutor;
-use text_components::{Style, TextComponent, format::Color};
+use text_components::{EncodedComponent, Style, TextComponent, format::Color};
 use tokio::io::{BufReader, BufWriter};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::select;
@@ -444,7 +444,7 @@ impl JavaConnection {
 
         if now - tracker.alive_time >= 15000 {
             if tracker.alive_pending {
-                self.disconnect(translations::DISCONNECT_TIMEOUT.msg());
+                self.disconnect(&translations::DISCONNECT_TIMEOUT);
             } else {
                 tracker.alive_pending = true;
                 tracker.alive_id = now;
@@ -473,7 +473,7 @@ impl JavaConnection {
             let mut latency = self.latency.lock();
             *latency = (*latency * 3 + time) / 4;
         } else {
-            self.disconnect(translations::DISCONNECT_TIMEOUT.msg());
+            self.disconnect(&translations::DISCONNECT_TIMEOUT);
         }
     }
 
@@ -485,9 +485,9 @@ impl JavaConnection {
     }
 
     /// Disconnects the client.
-    pub fn disconnect(&self, reason: impl Into<TextComponent>) {
+    pub fn disconnect(&self, reason: impl Into<EncodedComponent>) {
         let packet = match EncodedPacket::from_bare(
-            CDisconnect::new(&reason.into(), self),
+            CDisconnect::new(reason),
             self.compression,
             ConnectionProtocol::Play,
         ) {
@@ -938,7 +938,7 @@ impl NetworkConnection for JavaConnection {
         self.send_packet(CBundleDelimiter);
     }
 
-    fn disconnect_with_reason(&self, reason: TextComponent) {
+    fn disconnect_with_reason(&self, reason: EncodedComponent) {
         self.disconnect(reason);
     }
 

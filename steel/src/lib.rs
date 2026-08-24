@@ -100,7 +100,10 @@ impl SteelServer {
                     SteelServerError::Core(format!("failed to validate groups config: {error}"))
                 },
             )?;
-        let runtime_config = steel_config.server.into_runtime_config();
+        let runtime_config = steel_config
+            .server
+            .into_runtime_config()
+            .map_err(|error| SteelServerError::Core(format!("invalid motd: {error}")))?;
 
         let server = Server::new_with_commands(
             chunk_runtime,

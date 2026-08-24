@@ -29,7 +29,7 @@ use steel_utils::codec::VarInt;
 use steel_utils::serial::ReadFrom;
 use steel_utils::types::UpdateFlags;
 use steel_worldgen::structure::{StructureReferenceMap, StructureStartMap};
-use text_components::TextComponent;
+use text_components::EncodedComponent;
 struct RecordingConnection {
     packets: Arc<SyncMutex<Vec<EncodedPacket>>>,
 }
@@ -47,7 +47,7 @@ impl NetworkConnection for RecordingConnection {
         self.packets.lock().extend(packets);
     }
 
-    fn disconnect_with_reason(&self, _reason: TextComponent) {}
+    fn disconnect_with_reason(&self, _reason: EncodedComponent) {}
 
     fn tick(&self) {}
 

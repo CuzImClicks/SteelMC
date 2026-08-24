@@ -8,7 +8,7 @@ use steel_utils::Identifier;
 use steel_utils::hash::{ComponentHasher, HashComponent, HashEntry, sort_map_entries};
 use steel_utils::nbt::NbtNumeric as _;
 use steel_utils::serial::{ReadFrom, WriteTo};
-use text_components::TextComponent;
+use text_components::{EncodedComponent, TextComponent};
 
 use crate::sound_event::SoundEventHolder;
 use crate::{REGISTRY, RegistryExt, RegistryHolderEntry, RegistryTags};
@@ -23,7 +23,7 @@ pub struct InstrumentValue {
     sound_event: SoundEventHolder,
     use_duration: f32,
     range: f32,
-    description: TextComponent,
+    description: EncodedComponent,
 }
 
 impl InstrumentValue {
@@ -31,7 +31,7 @@ impl InstrumentValue {
         sound_event: SoundEventHolder,
         use_duration: f32,
         range: f32,
-        description: TextComponent,
+        description: EncodedComponent,
     ) -> Result<Self, InvalidInstrumentValue> {
         if !is_positive_float(use_duration) {
             return Err(InvalidInstrumentValue::UseDuration(use_duration));
@@ -51,7 +51,7 @@ impl InstrumentValue {
         sound_event: SoundEventHolder,
         use_duration: f32,
         range: f32,
-        description: TextComponent,
+        description: EncodedComponent,
     ) -> Self {
         assert!(is_positive_float(use_duration));
         assert!(is_positive_float(range));
@@ -79,7 +79,7 @@ impl InstrumentValue {
     }
 
     #[must_use]
-    pub const fn description(&self) -> &TextComponent {
+    pub const fn description(&self) -> &EncodedComponent {
         &self.description
     }
 
@@ -88,7 +88,7 @@ impl InstrumentValue {
         compound.insert("sound_event", self.sound_event.clone().to_nbt_tag());
         compound.insert("use_duration", self.use_duration);
         compound.insert("range", self.range);
-        compound.insert("description", self.description.to_codec_nbt());
+        compound.insert("description", self.description.to_nbt_tag());
         NbtTag::Compound(compound)
     }
 }
@@ -115,7 +115,7 @@ impl WriteTo for InstrumentValue {
         self.sound_event.write(writer)?;
         self.use_duration.write(writer)?;
         self.range.write(writer)?;
-        WriteTo::write(&self.description.to_codec_nbt(), writer)
+        self.description.write(writer)
     }
 }
 
@@ -125,7 +125,7 @@ impl ReadFrom for InstrumentValue {
             SoundEventHolder::read(data)?,
             f32::read(data)?,
             f32::read(data)?,
-            TextComponent::read(data)?,
+            TextComponent::read(data)?.encode(),
         )
         .map_err(Error::other)
     }
@@ -140,7 +140,8 @@ impl ToNbtTag for InstrumentValue {
 impl FromNbtTag for InstrumentValue {
     fn from_nbt_tag(tag: simdnbt::borrow::NbtTag) -> Option<Self> {
         let compound = tag.compound()?;
-        let description = TextComponent::from_nbt(&compound.get("description")?.to_owned())?;
+        let description =
+            TextComponent::from_nbt(&compound.get("description")?.to_owned())?.encode();
         Self::new(
             SoundEventHolder::from_nbt_tag(compound.get("sound_event")?)?,
             compound.get("use_duration")?.codec_f32()?,

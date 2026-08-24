@@ -125,7 +125,7 @@ mod tests {
             },
             3.5,
             48.0,
-            TextComponent::plain("Custom horn"),
+            TextComponent::plain("Custom horn").encode(),
         )
         .expect("inline instrument should be valid");
         let component = InstrumentComponent::new(RegistryHolder::direct(value));

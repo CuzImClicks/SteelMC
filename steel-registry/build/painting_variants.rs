@@ -1,4 +1,7 @@
-use crate::generator_functions::{generate_identifier, generate_option, read_variants_from_dir};
+use crate::generator_functions::{
+    generate_identifier, generate_option, generate_text_component, read_variants_from_dir,
+};
+use crate::shared_structs::TextComponentJson;
 use heck::ToShoutySnakeCase;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
@@ -14,66 +17,6 @@ pub struct PaintingVariantJson {
     title: Option<TextComponentJson>,
     #[serde(default)]
     author: Option<TextComponentJson>,
-}
-
-#[derive(Deserialize, Debug)]
-pub struct TextComponentJson {
-    translate: String,
-    #[serde(default)]
-    color: Option<String>,
-}
-
-fn parse_color(color_str: &str) -> TokenStream {
-    // Parse named colors at build time
-    match color_str {
-        "black" => quote! { Color::Black },
-        "dark_blue" => quote! { Color::DarkBlue },
-        "dark_green" => quote! { Color::DarkGreen },
-        "dark_aqua" => quote! { Color::DarkAqua },
-        "dark_red" => quote! { Color::DarkRed },
-        "dark_purple" => quote! { Color::DarkPurple },
-        "gold" => quote! { Color::Gold },
-        "gray" => quote! { Color::Gray },
-        "dark_gray" => quote! { Color::DarkGray },
-        "blue" => quote! { Color::Blue },
-        "green" => quote! { Color::Green },
-        "aqua" => quote! { Color::Aqua },
-        "red" => quote! { Color::Red },
-        "light_purple" => quote! { Color::LightPurple },
-        "yellow" => quote! { Color::Yellow },
-        "white" => quote! { Color::White },
-        _ => panic!("Unknown color: {color_str}"),
-    }
-}
-
-fn generate_text_component(component: &TextComponentJson) -> TokenStream {
-    let translate = component.translate.as_str();
-
-    if let Some(color_str) = &component.color {
-        let color = parse_color(color_str.as_str());
-        // Generate code that creates a TextComponent with color
-        quote! {
-            TextComponent {
-                content: Content::Translate(TranslatedMessage::new(#translate, text_components::Args::None)),
-                format: Format {
-                    color: Some(#color),
-                    font: None,
-                    bold: None,
-                    italic: None,
-                    underlined: None,
-                    strikethrough: None,
-                    obfuscated: None,
-                    shadow_color: None,
-                },
-                children: Cow::Borrowed(&[]),
-                interactions: Interactivity::new(),
-            }
-        }
-    } else {
-        quote! {
-            TextComponent::translated(TranslatedMessage::new(#translate, text_components::Args::None))
-        }
-    }
 }
 
 pub(crate) fn build() -> TokenStream {

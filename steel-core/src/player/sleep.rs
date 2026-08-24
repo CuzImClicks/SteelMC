@@ -5,7 +5,7 @@ use steel_registry::{
     dimension_type::BedRuleValue,
 };
 use steel_utils::{BlockPos, Direction, translations};
-use text_components::{TextComponent, text, translation::Translation};
+use text_components::{TextComponent, text};
 
 use super::{Player, PlayerRespawnConfig};
 use crate::{
@@ -51,8 +51,7 @@ impl Player {
             .dimension_type
             .bed_rule
             .error_message_key
-            .as_ref()
-            .map(|key| text!("<lang:{}>", Translation::<0>(key)))
+            .map(|key| text!("<lang:{key}>"))
     }
 
     fn bed_sleep_problem(&self) -> BedSleepingProblem {

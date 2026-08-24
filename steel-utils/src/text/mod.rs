@@ -11,7 +11,7 @@ use crate::{
 use simdnbt::owned::read_tag;
 use std::io::{self, Cursor};
 use text_components::{
-    TextComponent,
+    EncodedComponent, TextComponent,
     content::{Content, NbtSource, Object, PlayerModel, Resolvable},
     custom::{CustomData, Payload},
     format::Format,
@@ -46,6 +46,14 @@ impl ReadFrom for TextComponent {
 
         Self::from_nbt(&nbt_tag)
             .ok_or_else(|| io::Error::other("Failed to parse TextComponent from NBT"))
+    }
+}
+
+impl HashComponent for EncodedComponent {
+    fn hash_component(&self, hasher: &mut ComponentHasher) {
+        self.decode()
+            .expect("an encoded component decodes back into a tree")
+            .hash_component(hasher);
     }
 }
 

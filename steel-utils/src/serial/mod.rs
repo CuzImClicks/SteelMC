@@ -1,7 +1,7 @@
 //! This module contains traits for serializing and deserializing data.
 use std::io::{Cursor, Result, Write};
 
-/// A module for pre-encoded text components.
+/// Wire encoding for pre-encoded text components.
 pub mod component;
 /// A module for reading prefixed data.
 pub mod prefixed_read;
@@ -12,7 +12,6 @@ pub mod read;
 /// A module for writing data.
 pub mod write;
 
-pub use component::RawComponent;
 pub use write::OptionalNbt;
 
 const DEFAULT_BOUND: usize = i16::MAX as _;

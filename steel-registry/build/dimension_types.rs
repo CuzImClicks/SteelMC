@@ -200,9 +200,9 @@ fn generate_bed_rule(bed_rule: &BedRuleJson) -> TokenStream {
     let explodes = bed_rule.explodes;
     let error_message_key = generate_option(
         &bed_rule.error_message.as_ref().map(|m| m.translate.clone()),
-        |s| {
-            let s = s.as_str();
-            quote! { #s }
+        |key| {
+            let ident = Ident::new(&key.to_shouty_snake_case(), Span::call_site());
+            quote! { &steel_utils::translations::#ident }
         },
     );
     quote! {

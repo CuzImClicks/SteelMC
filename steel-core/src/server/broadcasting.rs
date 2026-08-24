@@ -109,7 +109,7 @@ impl Server {
         player: &Player,
         previous_name: Option<&str>,
     ) {
-        let display_name = player.display_name();
+        let display_name = player.encoded_display_name();
         // Fallback to the current name when the cache has no prior entry.
         let old_name = previous_name.unwrap_or(player.gameprofile.name.as_str());
         let message = if player.gameprofile.name.eq_ignore_ascii_case(old_name) {
@@ -133,7 +133,7 @@ impl Server {
         let message = text_nbt!(
             "<yellow><lang:{}:'{@}'></yellow>",
             &translations::MULTIPLAYER_PLAYER_LEFT,
-            player.display_name()
+            player.encoded_display_name()
         );
         self.broadcast_system_chat(message, None);
     }

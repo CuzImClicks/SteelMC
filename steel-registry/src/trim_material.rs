@@ -10,7 +10,7 @@ use steel_utils::Identifier;
 use steel_utils::codec::VarInt;
 use steel_utils::hash::{ComponentHasher, HashComponent, HashEntry, sort_map_entries};
 use steel_utils::serial::{PrefixedRead, PrefixedWrite, ReadFrom, WriteTo};
-use text_components::TextComponent;
+use text_components::{EncodedComponent, TextComponent};
 
 use crate::{REGISTRY, RegistryExt, RegistryHolderEntry, RegistryTags};
 
@@ -179,12 +179,12 @@ impl ReadFrom for MaterialAssetGroup {
 #[derive(Debug, Clone, PartialEq)]
 pub struct TrimMaterialValue {
     assets: MaterialAssetGroup,
-    description: TextComponent,
+    description: EncodedComponent,
 }
 
 impl TrimMaterialValue {
     #[must_use]
-    pub const fn new(assets: MaterialAssetGroup, description: TextComponent) -> Self {
+    pub const fn new(assets: MaterialAssetGroup, description: EncodedComponent) -> Self {
         Self {
             assets,
             description,
@@ -197,14 +197,14 @@ impl TrimMaterialValue {
     }
 
     #[must_use]
-    pub const fn description(&self) -> &TextComponent {
+    pub const fn description(&self) -> &EncodedComponent {
         &self.description
     }
 
     fn to_nbt_tag_ref(&self) -> NbtTag {
         let mut compound = NbtCompound::new();
         self.assets.insert_nbt_fields(&mut compound);
-        compound.insert("description", self.description.to_codec_nbt());
+        compound.insert("description", self.description.to_nbt_tag());
         NbtTag::Compound(compound)
     }
 }
@@ -212,7 +212,7 @@ impl TrimMaterialValue {
 impl WriteTo for TrimMaterialValue {
     fn write(&self, writer: &mut impl Write) -> IoResult<()> {
         self.assets.write(writer)?;
-        WriteTo::write(&self.description.to_codec_nbt(), writer)
+        self.description.write(writer)
     }
 }
 
@@ -220,7 +220,7 @@ impl ReadFrom for TrimMaterialValue {
     fn read(data: &mut Cursor<&[u8]>) -> IoResult<Self> {
         Ok(Self::new(
             MaterialAssetGroup::read(data)?,
-            TextComponent::read(data)?,
+            TextComponent::read(data)?.encode(),
         ))
     }
 }
@@ -244,7 +244,8 @@ impl FromNbtTag for TrimMaterialValue {
                 );
             }
         }
-        let description = TextComponent::from_nbt(&compound.get("description")?.to_owned())?;
+        let description =
+            TextComponent::from_nbt(&compound.get("description")?.to_owned())?.encode();
         Some(Self::new(
             MaterialAssetGroup::new(base, overrides),
             description,
@@ -386,7 +387,6 @@ impl RegistryHolderEntry for TrimMaterial {
 mod tests {
     use simdnbt::ToNbtTag as _;
     use steel_utils::Identifier;
-    use text_components::format::Color;
 
     use crate::init_vanilla_registry;
     use crate::{REGISTRY, vanilla_trim_materials};
@@ -430,9 +430,14 @@ mod tests {
                 .suffix(),
             "iron"
         );
+        let simdnbt::owned::NbtTag::Compound(description) = iron.description().to_nbt_tag() else {
+            panic!("trim material description should encode as a compound");
+        };
         assert_eq!(
-            iron.description().format.color,
-            Some(Color::Rgb(0xec, 0xec, 0xec))
+            description
+                .string("color")
+                .map(|value| value.to_str().into_owned()),
+            Some("#ECECEC".to_owned())
         );
     }
 

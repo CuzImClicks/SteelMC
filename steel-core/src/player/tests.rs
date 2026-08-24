@@ -24,7 +24,7 @@ use steel_utils::locks::{IntoShared as _, SyncMutex};
 use steel_utils::serial::ReadFrom;
 use steel_utils::types::{Difficulty, GameType, InteractionHand, UpdateFlags};
 use steel_utils::{BlockPos, ChunkPos, Downcast as _, DowncastType, DowncastTypeKey, WorldAabb};
-use text_components::TextComponent;
+use text_components::EncodedComponent;
 use uuid::Uuid;
 
 use crate::behavior::{InteractionResult, init_behaviors};
@@ -188,7 +188,7 @@ impl NetworkConnection for RecordingConnection {
         self.sent_packets.lock().extend(packets);
     }
 
-    fn disconnect_with_reason(&self, _reason: TextComponent) {}
+    fn disconnect_with_reason(&self, _reason: EncodedComponent) {}
 
     fn tick(&self) {}
 

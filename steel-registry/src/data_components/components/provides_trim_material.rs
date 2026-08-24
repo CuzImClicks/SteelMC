@@ -102,7 +102,7 @@ mod tests {
                 MaterialAssetInfo::new("custom").expect("test suffix should be valid"),
                 overrides,
             ),
-            description,
+            description.encode(),
         )))
     }
 

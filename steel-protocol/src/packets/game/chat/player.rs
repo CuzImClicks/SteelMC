@@ -4,7 +4,7 @@ use steel_utils::{
     codec::{BitSet, VarInt},
     serial::PrefixedWrite,
 };
-use text_components::{TextComponent, resolving::TextResolutor};
+use text_components::EncodedComponent;
 use uuid::Uuid;
 
 /// Represents Minecraft's ChatType.Bound structure
@@ -15,9 +15,9 @@ pub struct ChatTypeBound {
     #[write(as = RegistryHolder)]
     pub registry_id: i32,
     /// Sender name as NBT Component
-    pub sender_name: TextComponent,
+    pub sender_name: EncodedComponent,
     /// Optional target name as NBT Component (bool-prefixed)
-    pub target_name: Option<TextComponent>,
+    pub target_name: Option<EncodedComponent>,
 }
 
 #[derive(ClientPacket, Clone, Debug)]
@@ -31,7 +31,7 @@ pub struct CPlayerChat {
     pub timestamp: i64,
     pub salt: i64,
     pub previous_messages: Box<[PreviousMessage]>,
-    pub unsigned_content: Option<TextComponent>,
+    pub unsigned_content: Option<EncodedComponent>,
     pub filter_type: FilterType,
     pub chat_type: ChatTypeBound,
 }
@@ -48,7 +48,7 @@ impl CPlayerChat {
         timestamp: i64,
         salt: i64,
         previous_messages: Box<[PreviousMessage]>,
-        unsigned_content: Option<TextComponent>,
+        unsigned_content: Option<EncodedComponent>,
         filter_type: FilterType,
         chat_type: ChatTypeBound,
     ) -> Self {
@@ -145,18 +145,15 @@ pub enum FilterType {
 #[derive(ClientPacket, WriteTo, Clone, Debug)]
 #[packet_id(Play = C_DISGUISED_CHAT)]
 pub struct CDisguisedChat {
-    pub message: TextComponent,
+    pub message: EncodedComponent,
     pub chat_type: ChatTypeBound,
 }
 
 impl CDisguisedChat {
-    pub fn new<T: TextResolutor>(
-        message: &TextComponent,
-        chat_type: ChatTypeBound,
-        player: &T,
-    ) -> Self {
+    #[must_use]
+    pub fn new(message: impl Into<EncodedComponent>, chat_type: ChatTypeBound) -> Self {
         Self {
-            message: message.resolve(player),
+            message: message.into(),
             chat_type,
         }
     }

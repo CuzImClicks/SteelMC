@@ -7,7 +7,7 @@ use steel_registry::{
     vanilla_dimension_types, vanilla_items, vanilla_menu_types,
 };
 use steel_utils::Identifier;
-use text_components::TextComponent;
+use text_components::text;
 
 use crate::{inventory::prelude::*, server::Server, world::World};
 
@@ -59,10 +59,7 @@ fn switch_world(context: &SteelCommandContext<CommandSource>) -> Result<i32, Com
         .queue_player_world_selection(Arc::clone(player), Arc::clone(&world))
         .map_err(CommandSyntaxError::dynamic)?;
 
-    source.send_success(
-        &TextComponent::plain(format!("Switching to world {}", world.key)),
-        true,
-    );
+    source.send_success(&text!("Switching to world {}", world.key), true);
     Ok(1)
 }
 

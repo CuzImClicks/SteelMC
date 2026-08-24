@@ -35,7 +35,7 @@ use steel_utils::{
     locks::{IntoShared as _, Shared},
     types::{GameType, InteractionHand},
 };
-use text_components::TextComponent;
+use text_components::EncodedComponent;
 
 use super::{
     EquipmentSwapResult, InvalidHotbarSlot, MenuItemDisposition, MenuRemovalStatus, PlayerInventory,
@@ -772,7 +772,7 @@ impl NetworkConnection for LockProbeConnection {
         self.record_if_armed();
     }
 
-    fn disconnect_with_reason(&self, _reason: TextComponent) {}
+    fn disconnect_with_reason(&self, _reason: EncodedComponent) {}
 
     fn tick(&self) {}
 

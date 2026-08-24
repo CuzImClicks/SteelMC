@@ -10,7 +10,6 @@ use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::blocks::properties::{BlockStateProperties, Direction, EnumProperty};
 use steel_registry::vanilla_block_entity_types;
 use steel_utils::{BlockPos, BlockStateId, translations};
-use text_components::TextComponent;
 
 use crate::behavior::InventoryAccess;
 use crate::behavior::block::{BlockBehavior, BlockEntityCreation};
@@ -70,10 +69,9 @@ impl BlockBehavior for BarrelBlock {
 
         // Open the chest menu (3 rows for barrel)
         let inventory = player.inventory.clone();
-        player.open_menu(
-            TextComponent::translated(translations::CONTAINER_BARREL.msg()),
-            move |context| chest(inventory, context.container_id, container_ref, 3),
-        );
+        player.open_menu(&translations::CONTAINER_BARREL, move |context| {
+            chest(inventory, context.container_id, container_ref, 3)
+        });
 
         // TODO: Award stat OPEN_BARREL
         // TODO: Anger nearby piglins (PiglinAi.angerNearbyPiglins)

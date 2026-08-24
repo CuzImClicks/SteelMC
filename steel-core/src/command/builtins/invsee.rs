@@ -16,7 +16,6 @@ use super::super::{
     },
     registration::{CommandRegistration, CommandRegistrationError},
 };
-use crate::entity::Entity;
 use crate::inventory::menu::Menu;
 use crate::inventory::prelude::*;
 use crate::inventory::slots::CraftingHandler;
@@ -67,7 +66,7 @@ fn command(
             let modify = ctx.source().has_permission(&modify_permission);
             let opener = Arc::clone(source);
             let menu_source = Arc::clone(source);
-            opener.open_menu(target.display_name(), move |context| {
+            opener.open_menu(target.encoded_display_name(), move |context| {
                 invsee(context.container_id, &menu_source, &target, modify)
             });
             Ok(1)

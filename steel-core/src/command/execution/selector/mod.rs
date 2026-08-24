@@ -20,7 +20,7 @@ use steel_utils::{
     translations,
     types::GameType,
 };
-use text_components::TextComponent;
+use text_components::{TextComponent, text};
 use uuid::Uuid;
 
 use crate::{
@@ -434,7 +434,7 @@ impl SelectorParseError {
             }
             SelectorParseErrorKind::Invalid(message) => *message,
             SelectorParseErrorKind::Unsupported(option) => {
-                TextComponent::from(format!("Unsupported entity selector option: {option}"))
+                text!("Unsupported entity selector option: {option}")
             }
         }
     }

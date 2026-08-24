@@ -7,7 +7,7 @@ use steel_utils::Identifier;
 use steel_utils::hash::{ComponentHasher, HashComponent};
 use steel_utils::nbt::NbtNumeric as _;
 use steel_utils::serial::{ReadFrom, WriteTo};
-use text_components::TextComponent;
+use text_components::{EncodedComponent, TextComponent};
 
 use crate::sound_event::SoundEventHolder;
 use crate::{REGISTRY, RegistryExt, RegistryHolderEntry, RegistryTags};
@@ -15,7 +15,7 @@ use crate::{REGISTRY, RegistryExt, RegistryHolderEntry, RegistryTags};
 #[derive(Debug, Clone)]
 pub struct JukeboxSongValue {
     pub sound_event: SoundEventHolder,
-    pub description: TextComponent,
+    pub description: EncodedComponent,
     pub length_in_seconds: f32,
     pub comparator_output: i32,
 }
@@ -43,7 +43,7 @@ impl ReadFrom for JukeboxSongValue {
     fn read(data: &mut Cursor<&[u8]>) -> Result<Self> {
         Ok(Self {
             sound_event: SoundEventHolder::read(data)?,
-            description: TextComponent::read(data)?,
+            description: TextComponent::read(data)?.encode(),
             length_in_seconds: f32::read(data)?,
             comparator_output: steel_utils::codec::VarInt::read(data)?.0,
         })
@@ -54,7 +54,7 @@ impl ToNbtTag for JukeboxSongValue {
     fn to_nbt_tag(self) -> NbtTag {
         let mut compound = NbtCompound::new();
         compound.insert("sound_event", self.sound_event.to_nbt_tag());
-        compound.insert("description", self.description.to_codec_nbt());
+        compound.insert("description", self.description.to_nbt_tag());
         compound.insert("length_in_seconds", self.length_in_seconds);
         compound.insert("comparator_output", self.comparator_output);
         NbtTag::Compound(compound)
@@ -74,7 +74,8 @@ impl FromNbtTag for JukeboxSongValue {
         }
         Some(Self {
             sound_event: SoundEventHolder::from_nbt_tag(compound.get("sound_event")?)?,
-            description: TextComponent::from_nbt(&compound.get("description")?.to_owned())?,
+            description: TextComponent::from_nbt(&compound.get("description")?.to_owned())?
+                .encode(),
             length_in_seconds,
             comparator_output,
         })

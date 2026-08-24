@@ -3,9 +3,14 @@
 use std::{error::Error, fmt};
 
 use steel_utils::translations;
-use text_components::{Modifier, Style, TextComponent, format::Color, interactivity::ClickEvent};
+use text_components::{
+    Modifier, Style, TextComponent, format::Color, interactivity::ClickEvent, text,
+};
 
 const CONTEXT_AMOUNT: usize = 10;
+
+/// The marker vanilla appends to a command error, pointing at the cursor.
+const CONTEXT_HERE: TextComponent = text!("<red><i><lang:command.context.here></i></red>");
 
 /// Identifies a Brigadier parsing or command execution error.
 #[derive(Clone, Debug, PartialEq)]
@@ -310,13 +315,7 @@ impl CommandSyntaxError {
                     .underlined(true),
             );
         }
-        Some(
-            component.add_child(
-                TextComponent::from(&translations::COMMAND_CONTEXT_HERE)
-                    .color(Color::Red)
-                    .italic(true),
-            ),
-        )
+        Some(component.add_child(CONTEXT_HERE))
     }
 
     /// Returns the input immediately before the error marker.

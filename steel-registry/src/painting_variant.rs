@@ -7,15 +7,15 @@ use steel_utils::Identifier;
 use steel_utils::hash::{ComponentHasher, HashComponent};
 use steel_utils::nbt::NbtNumeric as _;
 use steel_utils::serial::{ReadFrom, WriteTo};
-use text_components::TextComponent;
+use text_components::{EncodedComponent, TextComponent};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct PaintingVariantValue {
     pub width: i32,
     pub height: i32,
     pub asset_id: Identifier,
-    pub title: Option<TextComponent>,
-    pub author: Option<TextComponent>,
+    pub title: Option<EncodedComponent>,
+    pub author: Option<EncodedComponent>,
 }
 
 impl WriteTo for PaintingVariantValue {
@@ -34,8 +34,8 @@ impl ReadFrom for PaintingVariantValue {
             width: steel_utils::codec::VarInt::read(data)?.0,
             height: steel_utils::codec::VarInt::read(data)?.0,
             asset_id: Identifier::read(data)?,
-            title: Option::<TextComponent>::read(data)?,
-            author: Option::<TextComponent>::read(data)?,
+            title: Option::<TextComponent>::read(data)?.map(|c| c.encode()),
+            author: Option::<TextComponent>::read(data)?.map(|c| c.encode()),
         })
     }
 }
@@ -47,10 +47,10 @@ impl ToNbtTag for PaintingVariantValue {
         compound.insert("width", self.width);
         compound.insert("height", self.height);
         if let Some(title) = self.title {
-            compound.insert("title", title.to_codec_nbt());
+            compound.insert("title", title.to_nbt_tag());
         }
         if let Some(author) = self.author {
-            compound.insert("author", author.to_codec_nbt());
+            compound.insert("author", author.to_nbt_tag());
         }
         NbtTag::Compound(compound)
     }
@@ -69,11 +69,11 @@ impl FromNbtTag for PaintingVariantValue {
             height,
             asset_id: Identifier::from_nbt_tag(compound.get("asset_id")?)?,
             title: match compound.get("title") {
-                Some(tag) => Some(TextComponent::from_nbt(&tag.to_owned())?),
+                Some(tag) => Some(TextComponent::from_nbt(&tag.to_owned())?.encode()),
                 None => None,
             },
             author: match compound.get("author") {
-                Some(tag) => Some(TextComponent::from_nbt(&tag.to_owned())?),
+                Some(tag) => Some(TextComponent::from_nbt(&tag.to_owned())?.encode()),
                 None => None,
             },
         })

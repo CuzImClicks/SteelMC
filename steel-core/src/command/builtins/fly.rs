@@ -3,7 +3,7 @@
 use std::{slice, sync::Arc};
 
 use steel_utils::{Identifier, translations};
-use text_components::TextComponent;
+use text_components::{TextComponent, text};
 
 use super::super::{
     brigadier::{ArgumentType, CommandNodeBuilder, CommandSyntaxError},
@@ -154,10 +154,10 @@ fn set_flying_speed(source: &CommandSource, targets: &[Arc<Player>], multiplier:
         target.set_flying_speed(speed);
         target.send_abilities();
         source.send_success(
-            &TextComponent::plain(format!(
+            &text!(
                 "Set flying speed for player '{}' to {multiplier:.1}x ({speed:.3})",
                 target.gameprofile.name
-            )),
+            ),
             true,
         );
     }
@@ -168,10 +168,10 @@ fn query_flying_speed(source: &CommandSource, targets: &[Arc<Player>]) {
         let speed = target.get_flying_speed();
         let multiplier = speed / DEFAULT_FLYING_SPEED;
         source.send_success(
-            &TextComponent::plain(format!(
+            &text!(
                 "Current flying speed for player '{}': {multiplier:.1}x ({speed:.3})",
                 target.gameprofile.name
-            )),
+            ),
             false,
         );
     }

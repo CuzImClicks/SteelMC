@@ -1,6 +1,6 @@
 use steel_macros::{ClientPacket, WriteTo};
 use steel_registry::packets::play::C_COMMAND_SUGGESTIONS;
-use text_components::TextComponent;
+use text_components::EncodedComponent;
 
 /// Sent by the server in response to a command suggestion request.
 #[derive(ClientPacket, WriteTo, Clone, Debug)]
@@ -27,7 +27,7 @@ pub struct SuggestionEntry {
     #[write(as = Prefixed(VarInt))]
     pub text: String,
     /// Optional tooltip shown when hovering over the suggestion.
-    pub tooltip: Option<TextComponent>,
+    pub tooltip: Option<EncodedComponent>,
 }
 
 impl SuggestionEntry {
@@ -40,7 +40,7 @@ impl SuggestionEntry {
     }
 
     /// Creates a new suggestion entry with text and tooltip.
-    pub fn with_tooltip(text: impl Into<String>, tooltip: impl Into<TextComponent>) -> Self {
+    pub fn with_tooltip(text: impl Into<String>, tooltip: impl Into<EncodedComponent>) -> Self {
         Self {
             text: text.into(),
             tooltip: Some(tooltip.into()),
