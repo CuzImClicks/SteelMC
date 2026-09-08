@@ -8,7 +8,7 @@ use steel_registry::{
         properties::{BlockStateProperties, EnumProperty},
     },
     items::item::BlockHitResult,
-    vanilla_blocks,
+    vanilla_blocks, vanilla_custom_stats,
 };
 use steel_utils::{BlockStateId, Direction, translations};
 
@@ -78,6 +78,7 @@ impl BlockBehavior for AnvilBlock {
         player.open_menu(&translations::CONTAINER_REPAIR, move |context| {
             anvil(inventory, context.container_id, pos, context.world)
         });
+        player.award_custom_stat(&vanilla_custom_stats::INTERACT_WITH_ANVIL);
         InteractionResult::Success
     }
 }

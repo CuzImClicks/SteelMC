@@ -3,10 +3,12 @@ use steel_protocol::packets::game::{AnimateAction, CAnimate};
 use steel_registry::{
     blocks::{block_state_ext::BlockStateExt as _, properties::BlockStateProperties},
     dimension_type::BedRuleValue,
+    vanilla_custom_stats,
 };
 use steel_utils::{BlockPos, Direction, translations};
 use text_components::{TextComponent, text};
 
+use super::sleep_state::SLEEP_DURATION;
 use super::{Player, PlayerRespawnConfig};
 use crate::{
     entity::{Entity, LivingEntity as _},
@@ -113,7 +115,7 @@ impl Player {
         if update_level_list {
             self.get_world().update_sleeping_player_list();
         }
-        self.set_sleep_counter(if forceful_wakeup { 0 } else { 100 });
+        self.set_sleep_counter(if forceful_wakeup { 0 } else { SLEEP_DURATION });
         let (yaw, pitch) = self.rotation();
         if let Err(error) = self.teleport(self.position(), yaw, pitch) {
             log::warn!(
@@ -174,6 +176,8 @@ impl Player {
             return Err(BedSleepingProblem::OtherProblem);
         }
         self.sync_entity_data();
+        self.award_custom_stat(&vanilla_custom_stats::SLEEP_IN_BED);
+        // TODO: trigger CriteriaTriggers.SLEPT_IN_BED once the foundation for advancements exist.
         if !world.can_sleep_through_nights() {
             self.send_overlay_message(translations::SLEEP_NOT_POSSIBLE.encode());
         }
@@ -213,7 +217,7 @@ impl Player {
     /// Returns whether this player has slept long enough for vanilla night skip.
     #[must_use]
     pub fn is_sleeping_long_enough(&self) -> bool {
-        self.is_sleeping() && self.sleep_counter() >= 100
+        self.is_sleeping() && self.sleep_counter() >= SLEEP_DURATION
     }
 
     fn set_sleep_counter(&self, sleep_counter: i32) {

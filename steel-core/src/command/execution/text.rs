@@ -74,7 +74,7 @@ where
                 selector,
                 objective,
             } => self.resolve_score(selector, objective),
-            Resolvable::NBT {
+            Resolvable::Nbt {
                 path,
                 interpret,
                 plain,
@@ -354,7 +354,7 @@ fn validate_resolvable_syntax(resolvable: &Resolvable) -> Result<(), String> {
                 validate_component_syntax(separator)?;
             }
         }
-        Resolvable::NBT {
+        Resolvable::Nbt {
             path,
             separator,
             source,
@@ -528,7 +528,7 @@ mod tests {
             .nbt
             .insert("minecraft:test".to_owned(), vec![NbtTag::Compound(first)]);
         let component = TextComponent {
-            content: Content::Resolvable(Resolvable::NBT {
+            content: Content::Resolvable(Resolvable::Nbt {
                 path: "values[]".into(),
                 interpret: false,
                 plain: true,

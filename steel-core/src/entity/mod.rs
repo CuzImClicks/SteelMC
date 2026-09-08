@@ -11,6 +11,7 @@ use rand::{SeedableRng as _, rngs::StdRng};
 use rustc_hash::FxHashSet;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
+use steel_math::wrap_degrees;
 use steel_protocol::packets::game::{
     AnimateAction, AttributeSnapshot, CAnimate, CDamageEvent, CEntityEvent, CHurtAnimation,
     CTeleportEntity, EquipmentSlotItem, RelativeMovement, SoundSource,
@@ -52,7 +53,6 @@ use steel_utils::types::{Difficulty, InteractionHand, UpdateFlags};
 use steel_utils::{
     BlockPos, BlockStateId, ChunkPos, Direction, Downcast as _, ErasedType, Identifier,
     UuidExt as _, WorldAabb, axis::Axis, block_util::FoundRectangle, text::DisplayResolutor,
-    wrap_degrees,
 };
 use text_components::{
     Args, Modifier as _, Style as _, TextComponent, interactivity::HoverEvent,
@@ -743,6 +743,7 @@ mod base;
 mod block_effects;
 mod callback;
 mod combat_rules;
+pub mod consume_effect;
 pub mod damage;
 pub(crate) mod dismount_helper;
 pub mod entities;
@@ -759,11 +760,14 @@ mod generated_entities;
 mod inside_block_effects;
 mod item_based_steering;
 mod item_frame;
+mod leash;
 mod living_base;
 mod living_entity;
 mod manager;
 mod mob;
+pub mod mob_effect;
 mod movement_sync;
+mod potion_contents;
 pub mod projectile;
 mod registry;
 mod spawn;
@@ -790,6 +794,7 @@ pub use callback::{
     PlayerEntityCallback, RemovalReason,
 };
 pub(crate) use entity::apply_entity_look_at;
+pub(crate) use entity::position_rider_default;
 pub use entity::{
     AcceptedClientMovement, AcceptedClientMovementOutcome, Entity, EntityEventSource,
 };
@@ -817,10 +822,11 @@ pub use movement_sync::{
     EntityRotationSyncState, EntityVelocitySyncState, POSITION_SYNC_THRESHOLD,
     PackedEntityRotation, ServerEntityMovementSyncState, ServerEntityMovementSyncUpdate,
 };
+pub(crate) use potion_contents::apply_potion_contents;
 pub use projectile::{
     EntityHitResult, Projectile, ProjectileBase, ProjectileDeflection, ProjectileEventSource,
     ProjectileHit, ThrowableItemProjectile, ThrowableProjectile, ViewVectorHitResult,
-    compute_margin, get_hit_result_on_view_vector,
+    compute_margin, get_hit_result_on_view_vector, spawn_throwable_item_projectile,
 };
 pub use registry::{ENTITIES, EntityLoadRequest, EntityRegistry, init_entities};
 pub(crate) use spawn::{AgeableMobGroupData, EntitySpawnReason, SpawnGroupData};
@@ -1344,6 +1350,7 @@ pub(crate) fn entity_loot_ref(entity: &dyn Entity) -> EntityRef<'_> {
         custom_name: None,
         sheep_color: sheep.map(|(color, _)| color),
         sheep_sheared: sheep.map(|(_, sheared)| sheared),
+        chicken_variant: living_entity.and_then(LivingEntity::chicken_loot_variant),
     }
 }
 
@@ -1363,6 +1370,20 @@ pub fn leashables_leashed_to_holder_in_area_near_position(
     })
 }
 
-mod leash;
+/// Returns the living entity that will be credited with killing this entity.
+pub(crate) fn get_kill_credit<E: LivingEntity + ?Sized>(
+    entity: &E,
+    world: &World,
+) -> Option<SharedEntity> {
+    if let Some(uuid) = entity.last_hurt_by_player_uuid() {
+        world
+            .players
+            .get_by_uuid(&uuid)
+            .and_then(|player| world.get_entity_by_id(player.id()))
+    } else {
+        entity.last_hurt_by_mob()
+    }
+}
+
 #[cfg(test)]
 mod tests;
