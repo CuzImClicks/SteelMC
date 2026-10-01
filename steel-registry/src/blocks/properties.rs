@@ -319,7 +319,7 @@ impl PropertyEnum for Direction {
 
 // Additional enum types for properties
 #[derive(Clone, Copy, Debug)]
-#[derive_const(PartialEq)]
+#[derive_const(PartialEq, Eq)]
 pub enum FrontAndTop {
     DownEast,
     DownNorth,
@@ -355,7 +355,7 @@ impl PropertyEnum for FrontAndTop {
 }
 
 #[derive(Clone, Copy, Debug)]
-#[derive_const(PartialEq)]
+#[derive_const(PartialEq, Eq)]
 pub enum AttachFace {
     Floor,
     Wall,
@@ -373,7 +373,7 @@ impl PropertyEnum for AttachFace {
 }
 
 #[derive(Clone, Copy, Debug)]
-#[derive_const(PartialEq)]
+#[derive_const(PartialEq, Eq)]
 pub enum BellAttachType {
     Floor,
     Ceiling,
@@ -393,7 +393,7 @@ impl PropertyEnum for BellAttachType {
 }
 
 #[derive(Clone, Copy, Debug)]
-#[derive_const(PartialEq)]
+#[derive_const(PartialEq, Eq)]
 pub enum WallSide {
     None,
     Low,
@@ -411,7 +411,7 @@ impl PropertyEnum for WallSide {
 }
 
 #[derive(Clone, Copy, Debug)]
-#[derive_const(PartialEq)]
+#[derive_const(PartialEq, Eq)]
 pub enum RedstoneSide {
     Up,
     Side,
@@ -429,7 +429,7 @@ impl PropertyEnum for RedstoneSide {
 }
 
 #[derive(Clone, Copy, Debug)]
-#[derive_const(PartialEq)]
+#[derive_const(PartialEq, Eq)]
 pub enum DoubleBlockHalf {
     Upper,
     Lower,
@@ -445,7 +445,7 @@ impl PropertyEnum for DoubleBlockHalf {
 }
 
 #[derive(Clone, Copy, Debug)]
-#[derive_const(PartialEq)]
+#[derive_const(PartialEq, Eq)]
 pub enum Half {
     Top,
     Bottom,
@@ -461,7 +461,7 @@ impl PropertyEnum for Half {
 }
 
 #[derive(Clone, Copy, Debug)]
-#[derive_const(PartialEq)]
+#[derive_const(PartialEq, Eq)]
 pub enum SideChainPart {
     Unconnected,
     Right,
@@ -524,7 +524,7 @@ impl PropertyEnum for RailShape {
 }
 
 #[derive(Clone, Copy, Debug)]
-#[derive_const(PartialEq)]
+#[derive_const(PartialEq, Eq)]
 pub enum BedPart {
     Head,
     Foot,
@@ -540,7 +540,7 @@ impl PropertyEnum for BedPart {
 }
 
 #[derive(Clone, Copy, Debug)]
-#[derive_const(PartialEq)]
+#[derive_const(PartialEq, Eq)]
 pub enum ChestType {
     Single,
     Left,
@@ -558,7 +558,7 @@ impl PropertyEnum for ChestType {
 }
 
 #[derive(Clone, Copy, Debug)]
-#[derive_const(PartialEq)]
+#[derive_const(PartialEq, Eq)]
 pub enum ComparatorMode {
     Compare,
     Subtract,
@@ -574,7 +574,7 @@ impl PropertyEnum for ComparatorMode {
 }
 
 #[derive(Clone, Copy, Debug)]
-#[derive_const(PartialEq)]
+#[derive_const(PartialEq, Eq)]
 pub enum DoorHingeSide {
     Left,
     Right,
@@ -590,7 +590,7 @@ impl PropertyEnum for DoorHingeSide {
 }
 
 #[derive(Clone, Copy, Debug)]
-#[derive_const(PartialEq)]
+#[derive_const(PartialEq, Eq)]
 pub enum NoteBlockInstrument {
     Harp,
     Basedrum,
@@ -685,7 +685,7 @@ impl PropertyEnum for NoteBlockInstrument {
 }
 
 #[derive(Clone, Copy, Debug)]
-#[derive_const(PartialEq)]
+#[derive_const(PartialEq, Eq)]
 pub enum PistonType {
     Normal,
     Sticky,
@@ -701,7 +701,7 @@ impl PropertyEnum for PistonType {
 }
 
 #[derive(Clone, Copy, Debug)]
-#[derive_const(PartialEq)]
+#[derive_const(PartialEq, Eq)]
 pub enum SlabType {
     Bottom,
     Top,
@@ -719,7 +719,7 @@ impl PropertyEnum for SlabType {
 }
 
 #[derive(Clone, Copy, Debug)]
-#[derive_const(PartialEq)]
+#[derive_const(PartialEq, Eq)]
 pub enum StairsShape {
     Straight,
     InnerLeft,
@@ -741,7 +741,7 @@ impl PropertyEnum for StairsShape {
 }
 
 #[derive(Clone, Copy, Debug)]
-#[derive_const(PartialEq)]
+#[derive_const(PartialEq, Eq)]
 pub enum StructureMode {
     Save,
     Load,
@@ -761,7 +761,7 @@ impl PropertyEnum for StructureMode {
 }
 
 #[derive(Clone, Copy, Debug)]
-#[derive_const(PartialEq)]
+#[derive_const(PartialEq, Eq)]
 pub enum BambooLeaves {
     None,
     Small,
@@ -779,7 +779,7 @@ impl PropertyEnum for BambooLeaves {
 }
 
 #[derive(Clone, Copy, Debug)]
-#[derive_const(PartialEq)]
+#[derive_const(PartialEq, Eq)]
 pub enum Tilt {
     None,
     Unstable,
@@ -799,7 +799,7 @@ impl PropertyEnum for Tilt {
 }
 
 #[derive(Clone, Copy, Debug)]
-#[derive_const(PartialEq)]
+#[derive_const(PartialEq, Eq)]
 pub enum DripstoneThickness {
     TipMerge,
     Tip,
@@ -821,7 +821,7 @@ impl PropertyEnum for DripstoneThickness {
 }
 
 #[derive(Clone, Copy, Debug)]
-#[derive_const(PartialEq)]
+#[derive_const(PartialEq, Eq)]
 pub enum SpeleothemThickness {
     TipMerge,
     Tip,
@@ -843,7 +843,7 @@ impl PropertyEnum for SpeleothemThickness {
 }
 
 #[derive(Clone, Copy, Debug)]
-#[derive_const(PartialEq)]
+#[derive_const(PartialEq, Eq)]
 pub enum SculkSensorPhase {
     Inactive,
     Active,
@@ -861,7 +861,7 @@ impl PropertyEnum for SculkSensorPhase {
 }
 
 #[derive(Clone, Copy, Debug)]
-#[derive_const(PartialEq)]
+#[derive_const(PartialEq, Eq)]
 pub enum TrialSpawnerState {
     Inactive,
     WaitingForPlayers,
@@ -885,7 +885,7 @@ impl PropertyEnum for TrialSpawnerState {
 }
 
 #[derive(Clone, Copy, Debug)]
-#[derive_const(PartialEq)]
+#[derive_const(PartialEq, Eq)]
 pub enum VaultState {
     Inactive,
     Active,
@@ -905,7 +905,7 @@ impl PropertyEnum for VaultState {
 }
 
 #[derive(Clone, Copy, Debug)]
-#[derive_const(PartialEq)]
+#[derive_const(PartialEq, Eq)]
 pub enum CreakingHeartState {
     Uprooted,
     Dormant,
@@ -923,7 +923,7 @@ impl PropertyEnum for CreakingHeartState {
 }
 
 #[derive(Clone, Copy, Debug)]
-#[derive_const(PartialEq)]
+#[derive_const(PartialEq, Eq)]
 pub enum TestBlockMode {
     Start,
     Log,
@@ -943,7 +943,7 @@ impl PropertyEnum for TestBlockMode {
 }
 
 #[derive(Clone, Copy, Debug)]
-#[derive_const(PartialEq)]
+#[derive_const(PartialEq, Eq)]
 pub enum Pose {
     Standing,
     Sitting,
@@ -963,7 +963,7 @@ impl PropertyEnum for Pose {
 }
 
 #[derive(Clone, Copy, Debug)]
-#[derive_const(PartialEq)]
+#[derive_const(PartialEq, Eq)]
 pub enum PotentSulfurState {
     Dry,
     Wet,

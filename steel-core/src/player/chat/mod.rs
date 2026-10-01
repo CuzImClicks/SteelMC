@@ -475,12 +475,12 @@ impl Player {
 
     /// Handles a chat acknowledgment packet from the client.
     pub fn handle_chat_ack(&self, packet: SChatAck) {
-        if let Err(err) = self
+        let applied = self
             .chat()
             .lock()
             .message_validator
-            .apply_offset(packet.offset.0)
-        {
+            .apply_offset(packet.offset.0);
+        if let Err(err) = applied {
             log::warn!(
                 "Player {} sent invalid chat acknowledgment: {err}",
                 self.gameprofile.name
