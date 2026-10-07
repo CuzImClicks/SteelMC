@@ -189,7 +189,7 @@ impl World {
             .scheduled_block_ticks_this_tick
             .lock()
             .as_ref()
-            .map(Arc::clone);
+            .cloned();
         batch.is_some_and(|batch| batch.contains(pos, block))
     }
 
@@ -199,7 +199,7 @@ impl World {
             .scheduled_fluid_ticks_this_tick
             .lock()
             .as_ref()
-            .map(Arc::clone);
+            .cloned();
         batch.is_some_and(|batch| batch.contains(pos, fluid))
     }
 
