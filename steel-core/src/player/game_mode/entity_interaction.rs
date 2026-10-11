@@ -621,7 +621,7 @@ impl Player {
             self.disconnect(Self::invalid_entity_attacked_message());
             log::warn!(
                 "Player {} tried to attack an invalid entity",
-                self.gameprofile.name
+                self.gameprofile.name()
             );
             return;
         }

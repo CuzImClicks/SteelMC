@@ -248,7 +248,7 @@ impl Player {
                 Err(err) => {
                     log::warn!(
                         "Player {} sent message with invalid signature: {err}",
-                        self.gameprofile.name
+                        self.gameprofile.name()
                     );
                     Some(Err(err))
                 }
@@ -290,7 +290,7 @@ impl Player {
 
         let chat_packet = CPlayerChat::new(
             0,
-            player.gameprofile.id,
+            player.gameprofile.id(),
             sender_index,
             signature.clone(),
             chat_message.clone(),
@@ -301,22 +301,22 @@ impl Player {
             FilterType::PassThrough,
             ChatTypeBound {
                 registry_id,
-                sender_name: TextComponent::plain(player.gameprofile.name.clone())
-                    .insertion(player.gameprofile.name.clone())
+                sender_name: TextComponent::plain(player.gameprofile.name().to_owned())
+                    .insertion(player.gameprofile.name().to_owned())
                     .click_event(ClickEvent::suggest_command(format!(
                         "/tell {} ",
-                        player.gameprofile.name
+                        player.gameprofile.name()
                     )))
                     .hover_event(HoverEvent::show_entity(
                         "minecraft:player",
                         self.uuid(),
-                        Some(player.gameprofile.name.clone()),
+                        Some(player.gameprofile.name().to_owned()),
                     )),
                 target_name: None,
             },
         );
 
-        steel_utils::chat!(player.gameprofile.name.clone(), "{}", chat_message);
+        steel_utils::chat!(player.gameprofile.name().to_owned(), "{}", chat_message);
         if let Some(sig_box) = &signature
             && sig_box.len() == 256
         {
@@ -369,7 +369,7 @@ impl Player {
     ///
     /// This should be called when receiving a `ChatSessionUpdate` packet from the client.
     pub fn set_chat_session(&self, session: RemoteChatSession) {
-        let chain = SignedMessageChain::new(self.gameprofile.id, session.session_id);
+        let chain = SignedMessageChain::new(self.gameprofile.id(), session.session_id);
 
         let session_data = session.as_data();
         let protocol_data = match session_data.to_protocol_data() {
@@ -377,7 +377,7 @@ impl Player {
             Err(err) => {
                 log::error!(
                     "Failed to convert chat session to protocol data for {}: {:?}",
-                    self.gameprofile.name,
+                    self.gameprofile.name(),
                     err
                 );
                 let mut chat = self.chat().lock();
@@ -395,11 +395,11 @@ impl Player {
 
         log::info!(
             "Player {} initialized signed chat session",
-            self.gameprofile.name
+            self.gameprofile.name()
         );
 
         let update_packet =
-            CPlayerInfoUpdate::update_chat_session(self.gameprofile.id, protocol_data);
+            CPlayerInfoUpdate::update_chat_session(self.gameprofile.id(), protocol_data);
         self.server().broadcast_to_online(update_packet);
     }
 
@@ -417,7 +417,10 @@ impl Player {
     ///
     /// This validates the player's profile key and initializes signed chat if valid.
     pub fn handle_chat_session_update(&self, packet: SChatSessionUpdate) {
-        log::info!("Player {} sent chat session update", self.gameprofile.name);
+        log::info!(
+            "Player {} sent chat session update",
+            self.gameprofile.name()
+        );
 
         let expires_at = profile_key::system_time_from_millis(packet.expires_at);
 
@@ -426,7 +429,7 @@ impl Player {
             Err(err) => {
                 log::warn!(
                     "Player {} sent invalid public key: {err}",
-                    self.gameprofile.name
+                    self.gameprofile.name()
                 );
                 self.disconnect(
                     translations::MULTIPLAYER_DISCONNECT_INVALID_PUBLIC_KEY_SIGNATURE.msg(),
@@ -450,7 +453,7 @@ impl Player {
         match validate_chat_session_update(
             old_profile_key.as_ref(),
             session_data,
-            self.gameprofile.id,
+            self.gameprofile.id(),
             validator
                 .as_deref()
                 .map(|validator| validator as &dyn SignatureValidator),
@@ -459,7 +462,7 @@ impl Player {
             ChatSessionUpdateOutcome::MissingServiceKeys => {
                 log::warn!(
                     "Ignoring chat session from {} due to missing services public key",
-                    self.gameprofile.name
+                    self.gameprofile.name()
                 );
             }
             ChatSessionUpdateOutcome::ExpiryDowngrade => {
@@ -469,7 +472,7 @@ impl Player {
             ChatSessionUpdateOutcome::Invalid(error) => {
                 log::warn!(
                     "Player {} sent invalid chat session: {error}",
-                    self.gameprofile.name
+                    self.gameprofile.name()
                 );
                 self.disconnect(
                     translations::MULTIPLAYER_DISCONNECT_INVALID_PUBLIC_KEY_SIGNATURE.msg(),
@@ -488,7 +491,7 @@ impl Player {
         {
             log::warn!(
                 "Player {} sent invalid chat acknowledgment: {err}",
-                self.gameprofile.name
+                self.gameprofile.name()
             );
         }
     }

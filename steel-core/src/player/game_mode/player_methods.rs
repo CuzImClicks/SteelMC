@@ -40,7 +40,7 @@ impl Player {
         self.update_game_mode_invisibility();
 
         let update_packet =
-            CPlayerInfoUpdate::update_game_mode(self.gameprofile.id, gamemode as i32);
+            CPlayerInfoUpdate::update_game_mode(self.gameprofile.id(), gamemode as i32);
         self.server().broadcast_to_online(update_packet);
 
         self.get_world().update_sleeping_player_list();
@@ -128,7 +128,7 @@ impl Player {
         if !player_can_change_difficulty(self, &world) {
             log::warn!(
                 "Player {} tried to change difficulty to {difficulty:?} without permission",
-                self.gameprofile.name
+                self.gameprofile.name()
             );
             return;
         }

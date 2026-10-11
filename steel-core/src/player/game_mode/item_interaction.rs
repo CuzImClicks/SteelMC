@@ -174,7 +174,7 @@ impl Player {
 
         log::debug!(
             "Player {} used {:?} (sequence: {}, yaw: {}, pitch: {})",
-            self.gameprofile.name,
+            self.gameprofile.name(),
             packet.hand,
             packet.sequence,
             packet.y_rot,

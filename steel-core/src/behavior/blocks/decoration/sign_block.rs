@@ -243,7 +243,7 @@ fn try_open_sign_editor(
     }
 
     // Check 2: Is another player editing?
-    if sign.is_other_player_editing(player.gameprofile.id) {
+    if sign.is_other_player_editing(player.gameprofile.id()) {
         return InteractionResult::Pass;
     }
 
@@ -257,7 +257,7 @@ fn try_open_sign_editor(
     let is_front_text = is_facing_front_text(state, pos, player);
 
     // Set the editing player lock
-    sign.set_player_who_may_edit(Some(player.gameprofile.id));
+    sign.set_player_who_may_edit(Some(player.gameprofile.id()));
 
     // Open the editor
     player.open_sign_editor(pos, is_front_text);

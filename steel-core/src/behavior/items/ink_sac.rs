@@ -36,7 +36,7 @@ fn apply_glow(context: &mut UseOnContext, glowing: bool) -> InteractionResult {
 
     if !context.player.abilities.lock().may_build
         || sign.is_waxed()
-        || sign.is_other_player_editing(context.player.gameprofile.id)
+        || sign.is_other_player_editing(context.player.gameprofile.id())
     {
         return InteractionResult::TryEmptyHandInteraction;
     }
