@@ -2,55 +2,20 @@
 
 use std::io::{Cursor, Result, Write};
 
-use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
+use simdnbt::owned::{NbtCompound, NbtTag};
 use simdnbt::{FromNbtTag, ToNbtTag};
 use steel_utils::Identifier;
 use steel_utils::UuidExt as _;
-use steel_utils::hash::{ComponentHasher, HashComponent, HashEntry, sort_map_entries};
+use steel_utils::hash::{ComponentHasher, HashComponent, HashEntry};
 use steel_utils::serial::{ReadFrom, WriteTo};
 use uuid::Uuid;
 
 use crate::game_profile::{
-    GameProfile, MAX_PLAYER_NAME, MAX_PROPERTIES, ProfileProperties, ProfileProperty,
+    GameProfile, MAX_PLAYER_NAME, ProfileProperties, ProfileProperty, hash_entries,
+    insert_properties, push_hash_entry, push_properties_hash_entry, read_properties,
     read_properties_network, read_string, validate_player_name, write_properties_network,
     write_string,
 };
-
-impl ProfileProperty {
-    fn to_nbt_compound(&self) -> NbtCompound {
-        let mut compound = NbtCompound::new();
-        compound.insert("name", self.name().to_owned());
-        compound.insert("value", self.value().to_owned());
-        if let Some(signature) = self.signature() {
-            compound.insert("signature", signature.to_owned());
-        }
-        compound
-    }
-
-    fn from_nbt_compound(compound: &NbtCompound) -> Option<Self> {
-        Self::new(
-            compound.get("name")?.string()?.to_string(),
-            compound.get("value")?.string()?.to_string(),
-            match compound.get("signature") {
-                Some(tag) => Some(tag.string()?.to_string()),
-                None => None,
-            },
-        )
-        .ok()
-    }
-}
-
-impl HashComponent for ProfileProperty {
-    fn hash_component(&self, hasher: &mut ComponentHasher) {
-        let mut entries = Vec::with_capacity(3);
-        push_hash_entry(&mut entries, "name", self.name());
-        push_hash_entry(&mut entries, "value", self.value());
-        if let Some(signature) = self.signature() {
-            push_hash_entry(&mut entries, "signature", signature);
-        }
-        hash_entries(hasher, &mut entries);
-    }
-}
 
 /// Profile fields that may still require resolution.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -414,60 +379,6 @@ fn uuid_from_nbt(tag: &NbtTag) -> Option<Uuid> {
     Uuid::from_int_array(tag.int_array()?)
 }
 
-fn insert_properties(compound: &mut NbtCompound, properties: &[ProfileProperty]) {
-    if !properties.is_empty() {
-        compound.insert(
-            "properties",
-            NbtList::Compound(
-                properties
-                    .iter()
-                    .map(ProfileProperty::to_nbt_compound)
-                    .collect(),
-            ),
-        );
-    }
-}
-
-fn read_properties(tag: Option<&NbtTag>) -> Option<Vec<ProfileProperty>> {
-    let Some(tag) = tag else {
-        return Some(Vec::new());
-    };
-    if let Some(list) = tag.list() {
-        let list = list.as_nbt_tags();
-        if list.len() > MAX_PROPERTIES {
-            return None;
-        }
-        return list
-            .iter()
-            .map(|tag| ProfileProperty::from_nbt_compound(tag.compound()?))
-            .collect();
-    }
-
-    let map = tag.compound()?;
-    if map.len() > MAX_PROPERTIES {
-        return None;
-    }
-    let mut properties = Vec::new();
-    for (name, values) in map.iter() {
-        let values = values.list()?;
-        match values {
-            NbtList::Empty => {}
-            NbtList::String(values) => {
-                for value in values {
-                    properties.push(
-                        ProfileProperty::new(name.to_string(), value.to_string(), None).ok()?,
-                    );
-                }
-            }
-            _ => return None,
-        }
-        if properties.len() > MAX_PROPERTIES {
-            return None;
-        }
-    }
-    Some(properties)
-}
-
 fn insert_skin_patch(compound: &mut NbtCompound, patch: &PlayerSkinPatch) {
     if let Some(texture) = &patch.texture {
         compound.insert("texture", texture.to_string());
@@ -586,18 +497,6 @@ fn read_optional_identifier_network(data: &mut Cursor<&[u8]>) -> Result<Option<I
     }
 }
 
-struct ProfilePropertyList<'a>(&'a [ProfileProperty]);
-
-impl HashComponent for ProfilePropertyList<'_> {
-    fn hash_component(&self, hasher: &mut ComponentHasher) {
-        hasher.start_list();
-        for property in self.0 {
-            hasher.put_component_hash(property);
-        }
-        hasher.end_list();
-    }
-}
-
 fn push_uuid_hash_entry(entries: &mut Vec<HashEntry>, key: &str, id: Uuid) {
     let values = id.to_int_array();
     let mut key_hasher = ComponentHasher::new();
@@ -605,30 +504,6 @@ fn push_uuid_hash_entry(entries: &mut Vec<HashEntry>, key: &str, id: Uuid) {
     let mut value_hasher = ComponentHasher::new();
     value_hasher.put_int_array(&values);
     entries.push(HashEntry::new(key_hasher, value_hasher));
-}
-
-fn push_properties_hash_entry(entries: &mut Vec<HashEntry>, properties: &[ProfileProperty]) {
-    if !properties.is_empty() {
-        push_hash_entry(entries, "properties", &ProfilePropertyList(properties));
-    }
-}
-
-fn push_hash_entry<T: HashComponent + ?Sized>(entries: &mut Vec<HashEntry>, key: &str, value: &T) {
-    let mut key_hasher = ComponentHasher::new();
-    key_hasher.put_string(key);
-    let mut value_hasher = ComponentHasher::new();
-    value.hash_component(&mut value_hasher);
-    entries.push(HashEntry::new(key_hasher, value_hasher));
-}
-
-fn hash_entries(hasher: &mut ComponentHasher, entries: &mut [HashEntry]) {
-    sort_map_entries(entries);
-    hasher.start_map();
-    for entry in entries {
-        hasher.put_raw_bytes(&entry.key_bytes);
-        hasher.put_raw_bytes(&entry.value_bytes);
-    }
-    hasher.end_map();
 }
 
 #[cfg(test)]

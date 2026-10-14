@@ -53,11 +53,29 @@ impl From<Option<TextComponent>> for PlayerDisplayName {
     }
 }
 
+/// The player a [`PlayerInfoEntry`] refers to.
+#[derive(Debug, Clone)]
+pub enum PlayerInfoTarget {
+    /// A player the client already knows
+    Uuid(Uuid),
+    /// Required when the packet actions include the add player action
+    Profile(GameProfile),
+}
+
+impl PlayerInfoTarget {
+    /// The UUID sent for this entry.
+    #[must_use]
+    pub const fn uuid(&self) -> Uuid {
+        match self {
+            Self::Uuid(uuid) => *uuid,
+            Self::Profile(profile) => profile.id(),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct PlayerInfoEntry {
-    pub uuid: Uuid,
-    /// Required when the packet actions include the add player action
-    pub profile: Option<GameProfile>,
+    pub target: PlayerInfoTarget,
     pub chat_session: Option<ProtocolRemoteChatSessionData>,
     pub game_mode: Option<VarInt>,
     pub listed: Option<bool>,
@@ -72,8 +90,7 @@ impl PlayerInfoEntry {
     #[must_use]
     pub const fn new(uuid: Uuid) -> Self {
         Self {
-            uuid,
-            profile: None,
+            target: PlayerInfoTarget::Uuid(uuid),
             chat_session: None,
             game_mode: None,
             listed: None,
@@ -155,8 +172,7 @@ impl CPlayerInfoUpdate {
         Self {
             actions: PLAYER_INFO_INIT_ACTIONS,
             entries: vec![PlayerInfoEntry {
-                uuid: profile.id(),
-                profile: Some(profile),
+                target: PlayerInfoTarget::Profile(profile),
                 chat_session: None,
                 game_mode: Some(VarInt(game_mode)),
                 listed: Some(true),
@@ -242,12 +258,14 @@ impl steel_utils::serial::WriteTo for CPlayerInfoUpdate {
         VarInt(self.entries.len() as i32).write(writer)?;
 
         for entry in &self.entries {
-            entry.uuid.write(writer)?;
+            entry.target.uuid().write(writer)?;
 
             if self.actions & (PlayerInfoAction::AddPlayer as u8) != 0 {
-                let profile = entry.profile.as_ref().ok_or_else(|| {
-                    std::io::Error::other("AddPlayer entry requires a game profile")
-                })?;
+                let PlayerInfoTarget::Profile(profile) = &entry.target else {
+                    return Err(std::io::Error::other(
+                        "AddPlayer entry requires a game profile",
+                    ));
+                };
                 profile.name().write_prefixed::<VarInt>(writer)?;
                 profile.write_properties(writer)?;
             }
